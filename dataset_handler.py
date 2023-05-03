@@ -1,12 +1,12 @@
 import json
 import copy
 import logging
-from dataclasses import dataclass, field, list_field
+from dataclasses import dataclass, field
 from typing import Dict, Optional, Sequence, List
 
 import torch
 import transformers
-from torch.utils.data import Dataset
+from datasets import Dataset, load_dataset
 
 IGNORE_INDEX = -100
 DEFAULT_PAD_TOKEN = "[PAD]"
@@ -14,6 +14,8 @@ DEFAULT_EOS_TOKEN = "</s>"
 DEFAULT_BOS_TOKEN = "<s>"
 DEFAULT_UNK_TOKEN = "<unk>"
 
+# from datasets import disable_caching
+# disable_caching()
 
 @dataclass
 class DataArguments:
@@ -51,7 +53,6 @@ def _tokenize_fn(strings: Sequence[str], tokenizer: transformers.PreTrainedToken
         tokenizer(
             text,
             return_tensors="pt",
-            padding="longest",
             max_length=tokenizer.model_max_length,
             truncation=True,
         )
@@ -69,77 +70,55 @@ def _tokenize_fn(strings: Sequence[str], tokenizer: transformers.PreTrainedToken
     )
 
 
-def preprocess(
-    sources: Sequence[str],
-    targets: Sequence[str],
-    tokenizer: transformers.PreTrainedTokenizer,
-) -> Dict:
-    """Preprocess the data by tokenizing."""
-    examples = [s + t for s, t in zip(sources, targets)]
-    examples_tokenized, sources_tokenized = [_tokenize_fn(strings, tokenizer) for strings in (examples, sources)]
-    input_ids = examples_tokenized["input_ids"]
-    labels = copy.deepcopy(input_ids)
-    for label, source_len in zip(labels, sources_tokenized["input_ids_lens"]):
-        label[:source_len] = IGNORE_INDEX
-    return dict(input_ids=input_ids, labels=labels)
+def load_supervised_dataset(tokenizer, data_files) -> Dataset:
+    dataset = load_dataset("json", data_files=data_files)
 
+    def change_premise(example):
+        example['premises'] = [e + ' [THEREFORE], ' for e in example['premises']]
+        example['conclusion'] = [e + tokenizer.eos_token for e in example['conclusion']]
+        return example
 
-class SupervisedDataset(Dataset):
-    """Dataset for supervised fine-tuning."""
+    dataset = dataset.map(change_premise, batched=True, batch_size=256, num_proc=4)
 
-    def __init__(self, data_path: str, tokenizer: transformers.PreTrainedTokenizer):
-        super(SupervisedDataset, self).__init__()
-        logging.warning("Loading data...")
+    def preprocess(example):
+        """Preprocess the data by tokenizing."""
+        full_txt = [s + t for s, t in zip(example['premises'], example['conclusion'])]
+        examples_tokenized = _tokenize_fn(full_txt, tokenizer)
+        sources_tokenized = _tokenize_fn(example['premises'], tokenizer)
+        input_ids = examples_tokenized["input_ids"]
+        labels = copy.deepcopy(input_ids)
+        # for label, source_len in zip(labels, sources_tokenized["input_ids_lens"]):
+        #     label[:source_len] = IGNORE_INDEX
+        return dict(input_ids=input_ids, labels=labels)
 
-        with open(data_path, "r") as f:
-            list_data_dict = [json.loads(line) for line in f.readlines()]
+    dataset = dataset.map(preprocess, batched=True, num_proc=8, batch_size=256,
+                          remove_columns=['premises', 'conclusion'])
 
-
-        logging.warning("Formatting inputs...")
-        sources = [f"{example['premises']} [THEREFORE], " for example in list_data_dict]
-        targets = [f"{example['conclusion']}{tokenizer.eos_token}" for example in list_data_dict]
-
-        logging.warning("Tokenizing inputs... This may take some time...")
-        data_dict = preprocess(sources, targets, tokenizer)
-
-        self.input_ids = data_dict["input_ids"]
-        self.labels = data_dict["labels"]
-
-    def __len__(self):
-        return len(self.input_ids)
-
-    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
-        return dict(input_ids=self.input_ids[i], labels=self.labels[i])
-
-
-@dataclass
-class DataCollatorForSupervisedDataset(object):
-    """Collate examples for supervised fine-tuning."""
-
-    tokenizer: transformers.PreTrainedTokenizer
-
-    def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
-        input_ids, labels = tuple([instance[key] for instance in instances] for key in ("input_ids", "labels"))
-        input_ids = torch.nn.utils.rnn.pad_sequence(
-            input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id
-        )
-        labels = torch.nn.utils.rnn.pad_sequence(labels, batch_first=True, padding_value=IGNORE_INDEX)
-        return dict(
-            input_ids=input_ids,
-            labels=labels,
-            attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
-        )
+    return dataset
 
 
 def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, data_args) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
-    train_dataset = SupervisedDataset(tokenizer=tokenizer, data_path=data_args.train_data_path)
+    data_collator = transformers.DataCollatorForTokenClassification(tokenizer=tokenizer,
+                        padding="longest", max_length=tokenizer.model_max_length, label_pad_token_id=IGNORE_INDEX)
 
-    dev_dict = {}
+    data_files = {
+        'train': data_args.train_data_path,
+    }
+
     if data_args.ruletaker_dev_path is not None:
-        dev_dict['ruletaker'] = SupervisedDataset(tokenizer=tokenizer, data_path=data_args.ruletaker_dev_path)
+        data_files.update({'ruletaker_dev': data_args.ruletaker_dev_path})
     if data_args.entailmenttree_dev_path is not None:
-        dev_dict['entailmenttree'] = SupervisedDataset(tokenizer=tokenizer, data_path=data_args.entailmenttree_dev_path)
+        data_files.update({'entailmenttree_dev': data_args.entailmenttree_dev_path})
 
-    data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
-    return dict(train_dataset=train_dataset, eval_dataset=dev_dict, data_collator=data_collator)
+    dataset = load_supervised_dataset(tokenizer=tokenizer, data_files=data_files)
+
+    processed_ds = dict(
+        train_dataset=dataset['train'],
+        eval_dataset={k: dataset[k] for k in dataset if 'dev' in k},
+        data_collator=data_collator)
+
+    return processed_ds
+
+
+
