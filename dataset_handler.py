@@ -3,7 +3,6 @@ import copy
 import logging
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Sequence, List
-
 import torch
 import transformers
 from datasets import Dataset, load_dataset
@@ -74,7 +73,7 @@ def load_supervised_dataset(tokenizer, data_files) -> Dataset:
     dataset = load_dataset("json", data_files=data_files)
 
     def change_premise(example):
-        example['premises'] = [e + ' [THEREFORE], ' for e in example['premises']]
+        example['premises'] = [e + ' [THEREFORE]' for e in example['premises']]
         example['conclusion'] = [e + tokenizer.eos_token for e in example['conclusion']]
         return example
 
@@ -87,8 +86,8 @@ def load_supervised_dataset(tokenizer, data_files) -> Dataset:
         sources_tokenized = _tokenize_fn(example['premises'], tokenizer)
         input_ids = examples_tokenized["input_ids"]
         labels = copy.deepcopy(input_ids)
-        # for label, source_len in zip(labels, sources_tokenized["input_ids_lens"]):
-        #     label[:source_len] = IGNORE_INDEX
+        for label, source_len in zip(labels, sources_tokenized["input_ids_lens"]):
+            label[:source_len] = IGNORE_INDEX
         return dict(input_ids=input_ids, labels=labels)
 
     dataset = dataset.map(preprocess, batched=True, num_proc=8, batch_size=256,

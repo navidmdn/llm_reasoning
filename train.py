@@ -12,6 +12,8 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
+from random import random
+
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Sequence
 import numpy as np
@@ -28,6 +30,7 @@ from transformers.trainer_utils import EvalLoopOutput, EvalPrediction
 from transformers.trainer_pt_utils import IterableDatasetShard, nested_concat
 from transformers.trainer import has_length, find_batch_size, denumpify_detensorize
 from tqdm import tqdm
+from transformers import StoppingCriteria
 
 rouge_metric = evaluate.load('rouge')
 exact_match_metric = evaluate.load("exact_match")
@@ -164,10 +167,14 @@ def train():
         use_fast=False,
     )
     special_tokens_dict = dict()
-    special_tokens_dict["pad_token"] = DEFAULT_PAD_TOKEN
-    special_tokens_dict["eos_token"] = DEFAULT_EOS_TOKEN
-    special_tokens_dict["bos_token"] = DEFAULT_BOS_TOKEN
-    special_tokens_dict["unk_token"] = DEFAULT_UNK_TOKEN
+    if tokenizer.pad_token is None:
+        special_tokens_dict["pad_token"] = DEFAULT_PAD_TOKEN
+    if tokenizer.eos_token is None:
+        special_tokens_dict["eos_token"] = DEFAULT_EOS_TOKEN
+    if tokenizer.bos_token is None:
+        special_tokens_dict["bos_token"] = DEFAULT_BOS_TOKEN
+    if tokenizer.unk_token is None:
+        special_tokens_dict["unk_token"] = DEFAULT_UNK_TOKEN
 
     smart_tokenizer_and_embedding_resize(
         special_tokens_dict=special_tokens_dict,
@@ -182,13 +189,26 @@ def train():
         # removed the token distribution in custom eval loop so don't need the following line
         # preds = np.argmax(preds, axis=-1)
 
-        decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
+        # todo: stop after eos token: isn't there a better way to do it?
+        preds_list = []
+        for p, l in zip(preds, labels):
+            # last ignore token is the first prediction
+            label_start = max(0, np.where(l != -100)[0][0]-1)
+            p = p[label_start:]
+            if tokenizer.eos_token_id in p:
+                first_pad_idx = np.where(p == tokenizer.eos_token_id)
+                if len(first_pad_idx) > 0 and first_pad_idx[0][0] < len(p)-1:
+                    p[first_pad_idx[0][0]+1:] = tokenizer.pad_token_id
+            preds_list.append(p)
+
+        decoded_preds = tokenizer.batch_decode(preds_list, skip_special_tokens=True)
         labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
 
         rouge_result = rouge_metric.compute(predictions=decoded_preds, references=decoded_labels, use_stemmer=True)
         exact_match_result = exact_match_metric.compute(predictions=decoded_preds, references=decoded_labels)
-
+        if random() < 0.01:
+            print(list(zip(decoded_labels, decoded_preds))[:5])
         generated_pred = np.where(labels == tokenizer.pad_token_id, 0, preds)
         prediction_lens = [np.count_nonzero(pred) for pred in generated_pred]
         rouge_result["gen_len"] = np.mean(prediction_lens)
