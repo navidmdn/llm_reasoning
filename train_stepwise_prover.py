@@ -186,7 +186,7 @@ def train():
         result = {}
         preds, labels = eval_preds
 
-        # removed the token distribution in custom eval loop so don't need the following line
+        # remov§ed the token distribution in custom eval loop so don't need the following line
         # preds = np.argmax(preds, axis=-1)
 
         # todo: stop after eos token: isn't there a better way to do it?
