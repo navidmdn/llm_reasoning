@@ -589,6 +589,13 @@ class EntailmentWriter(pl.LightningModule):
     def val_test_step(self, split: str, batch: Batch, batch_idx: int) -> Tuple[Any]:
         if self.stepwise:
             proof_pred, score = self.generate_stepwise_proof(batch["proof"], batch_idx)
+            loss = self(
+                batch["input_seq_ids"],
+                batch["input_seq_mask"],
+                batch["output_seq_ids"],
+            )
+            self.log(f"loss_{split}", loss, sync_dist=True, on_epoch=True)
+            print("val loss: ", loss)
         else:
             loss = self(
                 batch["input_seq_ids"],

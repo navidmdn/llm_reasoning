@@ -259,21 +259,22 @@ class StepwiseDataset(Dataset):  # type: ignore
             if k not in ("input_seq", "output_seq"):
                 batch[k] = [ex[k] for ex in examples]
 
-        if self.is_train:
-            oup = [ex["output_seq"] for ex in examples]
-            output_seq = self.tokenizer(
-                oup,
-                padding="longest",
-                max_length=self.max_output_len,
-                truncation=True,
-                return_tensors="pt",
-            )
-            output_seq.input_ids[
-                output_seq.input_ids == self.tokenizer.pad_token_id
-            ] = -100
-            batch["output_seq"] = oup
-            batch["output_seq_ids"] = output_seq.input_ids
-            batch["output_seq_mask"] = output_seq.attention_mask
+        # to calculate loss also for validation set
+        # if self.is_train:
+        oup = [ex["output_seq"] for ex in examples]
+        output_seq = self.tokenizer(
+            oup,
+            padding="longest",
+            max_length=self.max_output_len,
+            truncation=True,
+            return_tensors="pt",
+        )
+        output_seq.input_ids[
+            output_seq.input_ids == self.tokenizer.pad_token_id
+        ] = -100
+        batch["output_seq"] = oup
+        batch["output_seq_ids"] = output_seq.input_ids
+        batch["output_seq_mask"] = output_seq.attention_mask
 
         return batch
 
@@ -335,12 +336,13 @@ class StepwiseDataset(Dataset):  # type: ignore
         return ex
 
     def get_example_eval(self, ex: Example) -> Example:
-        proof = ex["proof"]
-        context_text = proof.serialize_context()
-        input_seq = f"$hypothesis$ = {proof.hypothesis} ; $context$ = {context_text} ; $proof$ = "
-
-        ex = deepcopy(ex)
-        ex["input_seq"] = input_seq
+        # todo: for loss calculation on validation set
+        # proof = ex["proof"]
+        # context_text = proof.serialize_context()
+        # input_seq = f"$hypothesis$ = {proof.hypothesis} ; $context$ = {context_text} ; $proof$ = "
+        # ex = deepcopy(ex)
+        # ex["input_seq"] = input_seq
+        ex = self.get_example_train(ex)
         return ex
 
 

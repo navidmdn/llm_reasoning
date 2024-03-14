@@ -1,8 +1,10 @@
 from common import *
 from lightning.pytorch.cli import LightningCLI
-from prover.datamodule import ProofDataModule
+from prover.datamodule import ProofDataModule, StepwiseDataset
 from prover.model import EntailmentWriter
-from lightning.fabric.plugins.environments import slurm
+import os
+
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 class CLI(LightningCLI):
     def add_arguments_to_parser(self, parser: Any) -> None:
@@ -13,6 +15,12 @@ class CLI(LightningCLI):
 
 
 def main() -> None:
+    #  temporary fix for slurm issue
+    for var in os.environ:
+        if 'slurm' in var.lower():
+            print(var)
+            del os.environ[var]
+
     cli = CLI(EntailmentWriter, ProofDataModule, save_config_kwargs={"overwrite": True})
     print("Configuration: \n", cli.config)
 

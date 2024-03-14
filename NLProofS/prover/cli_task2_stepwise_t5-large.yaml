@@ -1,8 +1,10 @@
 seed_everything: 1
 trainer:
-  accelerator: auto
+  accelerator: gpu
   precision: 32
   devices: 2
+  num_nodes: 1
+  plugins: null
   logger: lightning.pytorch.loggers.WandbLogger
   gradient_clip_val: 0.5
   max_epochs: 600
