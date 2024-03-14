@@ -6,6 +6,7 @@ import os
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+
 class CLI(LightningCLI):
     def add_arguments_to_parser(self, parser: Any) -> None:
         parser.link_arguments("model.model_name", "data.model_name")

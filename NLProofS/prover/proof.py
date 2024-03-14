@@ -75,6 +75,7 @@ class Proof:
         strict: bool,
         requires_complete: bool = False,
     ) -> None:
+        # todo: this might be an entry point for the general case
         if isinstance(context, str):
             context = extract_context(context)
         self.hypothesis = hypothesis

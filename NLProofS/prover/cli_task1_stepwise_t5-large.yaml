@@ -8,16 +8,21 @@ trainer:
   max_epochs: 500
   accumulate_grad_batches: 16
   log_every_n_steps: 5
-  check_val_every_n_epoch: 10
+  check_val_every_n_epoch: 2
   callbacks:
     - class_path: lightning.pytorch.callbacks.LearningRateMonitor
       init_args: 
         logging_interval: step
+    - class_path: lightning.pytorch.callbacks.early_stopping.EarlyStopping
+      init_args:
+        monitor: loss_val
+        patience: 5
+        mode: min
 model:
   stepwise: true
   max_num_steps: 20
   lr: 0.0001
-  warmup_steps: 1000
+  warmup_steps: 500
   model_name: t5-large
   num_beams: 10
   topk: 10
@@ -31,8 +36,8 @@ data:
   sample_goal: hypothesis # hypothesis | intermediates
   subtree_proved_prob: 0.5
   subtree_proved_all_or_none: true
-  batch_size: 4
-  num_workers: 2
+  batch_size: 16
+  num_workers: 4
   max_input_len: 1024
   max_output_len: 64
   path_train: ../data/entailment_trees_emnlp2021_data_v3/dataset/task_1/train.jsonl
