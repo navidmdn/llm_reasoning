@@ -7,7 +7,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 if __name__ == "__main__":
-    t = Trainer(accelerator='cpu', limit_train_batches=5, limit_val_batches=1, limit_test_batches=1)
+    t = Trainer(accelerator='mps', limit_train_batches=5, limit_val_batches=1, limit_test_batches=1)
 
     model = EntailmentWriter(
         dataset='entailmentbank',
