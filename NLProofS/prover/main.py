@@ -1,6 +1,6 @@
 from common import *
 from lightning.pytorch.cli import LightningCLI
-from prover.datamodule import ProofDataModule, StepwiseDataset
+from prover.datamodule import ProofDataModule
 from prover.model import EntailmentWriter
 import os
 

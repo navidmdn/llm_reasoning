@@ -2,7 +2,9 @@ from common import *
 from lightning.pytorch.cli import LightningCLI
 from verifier.datamodule import EntailmentDataModule
 from verifier.model import EntailmentClassifier
+import os
 
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 class CLI(LightningCLI):
     def add_arguments_to_parser(self, parser: Any) -> None:
@@ -11,7 +13,13 @@ class CLI(LightningCLI):
 
 
 def main() -> None:
-    cli = CLI(EntailmentClassifier, EntailmentDataModule, save_config_overwrite=True)
+    #  temporary fix for slurm issue
+    for var in os.environ:
+        if 'slurm' in var.lower():
+            print(var)
+            del os.environ[var]
+
+    cli = CLI(EntailmentClassifier, EntailmentDataModule, save_config_kwargs={"overwrite": True})
     print("Configuration: \n", cli.config)
 
 

@@ -7,7 +7,7 @@ from torch.distributions.categorical import Categorical
 import json
 import random
 from torch.utils.data import Dataset, DataLoader
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 from transformers import AutoTokenizer
 from rank_bm25 import BM25Okapi
 
