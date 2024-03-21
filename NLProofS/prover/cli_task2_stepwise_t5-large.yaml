@@ -11,7 +11,7 @@ trainer:
   max_epochs: 500
   accumulate_grad_batches: 16
   log_every_n_steps: 5
-  check_val_every_n_epoch: 2
+  check_val_every_n_epoch: 1
   callbacks:
     - class_path: lightning.pytorch.callbacks.LearningRateMonitor
       init_args:
@@ -34,12 +34,13 @@ model:
   proof_search: false
   oracle_prover: false
   oracle_verifier: false
+  cache_dir: ../../../hfcache
 data:
   dataset: entailmentbank
   sample_goal: intermediates # hypothesis | intermediates
   subtree_proved_prob: 0.75
   subtree_proved_all_or_none: false
-  batch_size: 16
+  batch_size: 8
   num_workers: 4
   max_input_len: 1024
   max_output_len: 64

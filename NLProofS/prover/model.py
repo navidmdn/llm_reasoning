@@ -115,6 +115,7 @@ class EntailmentWriter(pl.LightningModule):
         verifier_ckpt: Optional[str] = None,
         oracle_prover: Optional[bool] = False,
         oracle_verifier: Optional[bool] = False,
+        cache_dir: Optional[str] = None,
     ) -> None:
         super().__init__()
         self.save_hyperparameters()
@@ -137,16 +138,16 @@ class EntailmentWriter(pl.LightningModule):
             ]  # Avoid making the verifier a submodule.
 
         self.tokenizer = AutoTokenizer.from_pretrained(
-            model_name, model_max_length=max_input_len
+            model_name, model_max_length=max_input_len, cache_dir=cache_dir
         )
         if (
             model_name.startswith("t5-")
             or model_name.startswith("google/t5-v1_1-")
             or model_name.startswith("google/byt5-")
         ):
-            self.seq2seq = T5ForConditionalGeneration.from_pretrained(model_name)
+            self.seq2seq = T5ForConditionalGeneration.from_pretrained(model_name, cache_dir=cache_dir)
         elif model_name.startswith("facebook/bart-"):
-            self.seq2seq = BartForConditionalGeneration.from_pretrained(model_name)
+            self.seq2seq = BartForConditionalGeneration.from_pretrained(model_name, cache_dir=cache_dir)
         else:
             raise NotImplementedError
 
@@ -562,7 +563,7 @@ class EntailmentWriter(pl.LightningModule):
             loss = self(
                 batch["input_seq_ids"], batch["input_seq_mask"], batch["output_seq_ids"]
             )
-            self.log("loss_train", loss, on_epoch=True, sync_dist=True)
+            self.log("loss_train", loss, on_epoch=True, on_step=False, sync_dist=True)
         else:
             loss = self(
                 batch["input_seq_ids"],
@@ -594,7 +595,7 @@ class EntailmentWriter(pl.LightningModule):
                 batch["input_seq_mask"],
                 batch["output_seq_ids"],
             )
-            self.log(f"loss_{split}", loss, sync_dist=True, on_epoch=True)
+            self.log(f"loss_{split}", loss, sync_dist=True, on_step=False, on_epoch=True)
             print("val loss: ", loss)
         else:
             loss = self(
@@ -602,7 +603,7 @@ class EntailmentWriter(pl.LightningModule):
                 batch["input_seq_mask"],
                 batch["output_seq_ids"],
             )
-            self.log(f"loss_{split}", loss, sync_dist=True)
+            self.log(f"loss_{split}", loss, sync_dist=True, on_epoch=True)
             proof_pred, score = self.generate_entire_proof(batch["input_seq"])
 
         if self.dataset == "entailmentbank":

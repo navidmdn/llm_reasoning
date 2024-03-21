@@ -24,6 +24,7 @@ class EntailmentClassifier(pl.LightningModule):
         warmup_steps: int,
         pos_weight: float,
         max_input_len: int,
+        cache_dir: str = None,
     ) -> None:
         super().__init__()
         self.save_hyperparameters()
@@ -32,9 +33,9 @@ class EntailmentClassifier(pl.LightningModule):
         self.pos_weight = pos_weight
         self.max_input_len = max_input_len
         self.tokenizer = AutoTokenizer.from_pretrained(
-            model_name, model_max_length=max_input_len
+            model_name, model_max_length=max_input_len, cache_dir=cache_dir
         )
-        self.encoder = AutoModel.from_pretrained(model_name)
+        self.encoder = AutoModel.from_pretrained(model_name, cache_dir=cache_dir)
         self.fc = nn.Linear(self.encoder.config.hidden_size, 1)
         self.metrics = {
             "train": {
@@ -61,7 +62,7 @@ class EntailmentClassifier(pl.LightningModule):
     def log_metrics(self, split: str, logit: torch.Tensor, label: torch.Tensor) -> None:
         for name, metric in self.metrics[split].items():
             metric(logit, label)
-            self.log(f"{name}_{split}", metric, on_step=False, on_epoch=True)
+            self.log(f"{name}_{split}", metric, on_step=True, on_epoch=True)
 
     def forward(  # type: ignore
         self, input_ids: torch.Tensor, attention_mask: torch.Tensor
@@ -80,7 +81,7 @@ class EntailmentClassifier(pl.LightningModule):
         loss = F.binary_cross_entropy_with_logits(
             logit, batch["label"].float(), pos_weight=torch.tensor(self.pos_weight)
         )
-        self.log("loss_train", loss, on_epoch=True, sync_dist=True)
+        self.log("loss_train", loss, on_step=True, sync_dist=True)
         self.log_metrics("train", logit, batch["label"])
         return loss
 
@@ -89,7 +90,7 @@ class EntailmentClassifier(pl.LightningModule):
         loss = F.binary_cross_entropy_with_logits(
             logit, batch["label"].float(), pos_weight=torch.tensor(self.pos_weight)
         )
-        self.log("loss_val", loss, sync_dist=True, on_epoch=True)
+        self.log("loss_val", loss, sync_dist=True, on_step=True)
         self.log_metrics("val", logit, batch["label"])
 
     def configure_optimizers(self) -> Dict[str, Any]:

@@ -158,6 +158,7 @@ class EntailmentBankDataset(EntailmentDataset):
             if node.is_leaf():
                 continue
 
+            # no negative samples for validation and test
             if self.split != "train":
                 premises = [child.sent for child in node.children]
                 if len(premises) >= 2:
@@ -219,6 +220,10 @@ class RuleTakerDataset(EntailmentDataset):
         for line in open(path):
             ex = json.loads(line)
             pos, neg = self.extract_examples(ex)
+
+            # todo: sampling negative examples?
+
+
             data.extend(pos)
             data.extend(neg)
 
