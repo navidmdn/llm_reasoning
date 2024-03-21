@@ -192,6 +192,7 @@ class EntailmentBankDataset(EntailmentDataset):
                             create_negative(prems, node.sent)
 
                         if num_premises > 2:
+                            # any subset wouldn't prove the hypothesis
                             for subset in powerset(premises):
                                 if 2 <= len(subset) < num_premises:
                                     create_negative(list(subset), node.sent)

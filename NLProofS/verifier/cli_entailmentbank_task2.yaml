@@ -1,11 +1,21 @@
 seed_everything: 1
 trainer:
-  gpus: 1
+  accelerator: gpu
+  default_root_dir: ./output/entailmentbank_verifier_task2_default
+  precision: 32
+  devices: 2
+  num_nodes: 1
+  plugins: null
   max_epochs: 50
   callbacks:
-    - class_path: pytorch_lightning.callbacks.LearningRateMonitor
-      init_args: 
+    - class_path: lightning.pytorch.callbacks.LearningRateMonitor
+      init_args:
         logging_interval: step
+    - class_path: lightning.pytorch.callbacks.early_stopping.EarlyStopping
+      init_args:
+        monitor: loss_val
+        patience: 5
+        mode: min
 model:
   lr: 1e-5
   warmup_steps: 2500
@@ -14,7 +24,7 @@ model:
 data:
   dataset: entailmentbank
   batch_size: 128
-  num_workers: 2
+  num_workers: 8
   max_num_premises: 4
   max_input_len: 256
   irrelevant_distractors_only: true

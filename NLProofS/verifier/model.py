@@ -39,7 +39,7 @@ class EntailmentClassifier(pl.LightningModule):
         self.metrics = {
             "train": {
                 "accuracy": BinaryAccuracy(),
-                "average_precision": BinaryAveragePrecision(pos_label=1),
+                "average_precision": BinaryAveragePrecision(),
                 "precision": BinaryPrecision(),
                 "recall": BinaryRecall(),
                 "specificity": BinarySpecificity(),
@@ -47,7 +47,7 @@ class EntailmentClassifier(pl.LightningModule):
             },
             "val": {
                 "accuracy": BinaryAccuracy(),
-                "average_precision": BinaryAveragePrecision(pos_label=1),
+                "average_precision": BinaryAveragePrecision(),
                 "precision": BinaryPrecision(),
                 "recall": BinaryRecall(),
                 "specificity": BinarySpecificity(),
@@ -80,7 +80,7 @@ class EntailmentClassifier(pl.LightningModule):
         loss = F.binary_cross_entropy_with_logits(
             logit, batch["label"].float(), pos_weight=torch.tensor(self.pos_weight)
         )
-        self.log("loss_train", loss, on_epoch=True)
+        self.log("loss_train", loss, on_epoch=True, sync_dist=True)
         self.log_metrics("train", logit, batch["label"])
         return loss
 
@@ -89,7 +89,7 @@ class EntailmentClassifier(pl.LightningModule):
         loss = F.binary_cross_entropy_with_logits(
             logit, batch["label"].float(), pos_weight=torch.tensor(self.pos_weight)
         )
-        self.log("loss_val", loss)
+        self.log("loss_val", loss, sync_dist=True, on_epoch=True)
         self.log_metrics("val", logit, batch["label"])
 
     def configure_optimizers(self) -> Dict[str, Any]:
