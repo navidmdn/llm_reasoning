@@ -159,46 +159,48 @@ class EntailmentBankDataset(EntailmentDataset):
                 continue
 
             # no negative samples for validation and test
-            if self.split != "train":
-                premises = [child.sent for child in node.children]
-                if len(premises) >= 2:
+            # todo: i want to test this also on validation
+            # if self.split != "train":
+            #     premises = [child.sent for child in node.children]
+            #     if len(premises) >= 2:
+            #         create_positive(premises, node.sent)
+            #
+            # else:
+
+            # 1. Enumerate all combinations of premises leading to node.sent.
+            for premise_nodes in enumerate_premise_nodes(
+                node, self.max_num_premises
+            ):
+                premises = [pn.sent for pn in premise_nodes]
+                num_premises = len(premises)
+
+                if num_premises >= 2:
                     create_positive(premises, node.sent)
 
-            else:
-                # 1. Enumerate all combinations of premises leading to node.sent.
-                for premise_nodes in enumerate_premise_nodes(
-                    node, self.max_num_premises
-                ):
-                    premises = [pn.sent for pn in premise_nodes]
-                    num_premises = len(premises)
+                    # 2. Perturbe them to generate negatives.
+                    for i, p in enumerate(premises):
+                        if self.irrelevant_distractors_only:
+                            candidates = [
+                                sent
+                                for sent in context.values()
+                                if sent not in premises
+                            ]
+                        else:
+                            candidates = [
+                                sent for sent in context.values() if sent != p
+                            ]
+                        alternative = sample_similar_sentence(p, candidates)
+                        prems = deepcopy(premises)
+                        prems[i] = alternative
+                        create_negative(prems, node.sent)
 
-                    if num_premises >= 2:
-                        create_positive(premises, node.sent)
+                    if num_premises > 2:
+                        # any subset wouldn't prove the hypothesis
+                        for subset in powerset(premises):
+                            if 2 <= len(subset) < num_premises:
+                                create_negative(list(subset), node.sent)
 
-                        # 2. Perturbe them to generate negatives.
-                        for i, p in enumerate(premises):
-                            if self.irrelevant_distractors_only:
-                                candidates = [
-                                    sent
-                                    for sent in context.values()
-                                    if sent not in premises
-                                ]
-                            else:
-                                candidates = [
-                                    sent for sent in context.values() if sent != p
-                                ]
-                            alternative = sample_similar_sentence(p, candidates)
-                            prems = deepcopy(premises)
-                            prems[i] = alternative
-                            create_negative(prems, node.sent)
-
-                        if num_premises > 2:
-                            # any subset wouldn't prove the hypothesis
-                            for subset in powerset(premises):
-                                if 2 <= len(subset) < num_premises:
-                                    create_negative(list(subset), node.sent)
-
-        if self.split == "train":
+        if self.split in ["train", "val"]:
             # Copy premises.
             leaf_sents = [node.sent for node in tree.get_leaves()]
             for s1 in leaf_sents:
@@ -206,6 +208,11 @@ class EntailmentBankDataset(EntailmentDataset):
                     if s1 == s2:
                         continue
                     create_negative([s1, s2], s1)
+
+        # todo: for validation only sample negatives the same number as positives
+        if self.split == "val":
+            random.shuffle(negatives)
+            negatives = negatives[: len(positives)]
 
         return positives, negatives
 
