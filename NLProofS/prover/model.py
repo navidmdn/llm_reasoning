@@ -596,7 +596,6 @@ class EntailmentWriter(pl.LightningModule):
                 batch["output_seq_ids"],
             )
             self.log(f"loss_{split}", loss, sync_dist=True, on_step=False, on_epoch=True)
-            print("val loss: ", loss)
         else:
             loss = self(
                 batch["input_seq_ids"],
