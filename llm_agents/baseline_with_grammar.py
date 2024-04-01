@@ -19,7 +19,7 @@ from fire import Fire
 from langchain.prompts.example_selector import NGramOverlapExampleSelector, SemanticSimilarityExampleSelector
 
 
-def run(llm_name='mistral:instruct', cache_dir=None):
+def run(llm_name='llama7b', cache_dir=None):
 
     llm = load_llamacpp_autoregressive_model(model_file=llm_name)
 
@@ -33,7 +33,7 @@ def run(llm_name='mistral:instruct', cache_dir=None):
         template="premises:\n{context}\nhypothesis:\n{hypothesis}\nproof:\n{proof}\n"
     )
 
-    top_k = 5
+    top_k = 3
     example_selector = NGramOverlapExampleSelector(
         examples=train_examples[:top_k],
         example_prompt=example_prompt,
@@ -47,7 +47,8 @@ def run(llm_name='mistral:instruct', cache_dir=None):
             example_selector=example_selector,
             example_prompt=example_prompt,
             prefix="""You are a reasoning and logical prover. Your task is to generate a natural language proof to reach\
- a hypothesis. Here are a few exapmles and the format you need to follow to generate the proof.""",
+ a hypothesis. Here are a few examples and the format you need to follow to generate the proof. Write your proof in steps\
+ and try to reach the hypothesis by building up step by step""",
             suffix="premises:\n{context}\nhypothesis:\n{hypothesis}\nproof:\n""",
             input_variables=["context", "hypothesis"],
         )

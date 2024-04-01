@@ -1,16 +1,18 @@
 root ::= (proofstep)+
 
-proofstep ::= prem "->" conc
+proofstep ::= prem " -> " conc
 
 prem ::= (sent | int) ((" & " (sent | int))+)*
-
-conc ::= concdef "; "
 
 sent ::= "sent"[0-9]+
 int ::= "int"[0-9]+
 
-concdef ::= (sent | int) ": " string
-string ::= (
-    [^"\\\x7F\x00-\x1F] |
-    "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]) # escapes
-  )*
+conc ::= (
+((sent | int) ": " string "; " ) | "hypothesis;")
+
+string ::= [^\r\n\x0b\x0c\x85\u2028\u2029;&:]+
+
+#(
+#    [^"\\\x7F\x00-\x1F] |
+#    "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]) # escapes
+#  )*
