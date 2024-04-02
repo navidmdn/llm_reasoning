@@ -1,0 +1,18 @@
+root ::= (proofstep)+
+
+proofstep ::= prem " -> " conc
+
+prem ::= (sent | int) ((" & " (sent | int))+)*
+
+sent ::= "sent" [0-9] ": " string
+int ::= "int" [0-9] ": " string
+
+conc ::= (
+((sent | int) "; " ) | "hypothesis;")
+
+string ::= [^\r\n\x0b\x0c\x85\u2028\u2029;&:]+
+
+#(
+#    [^"\\\x7F\x00-\x1F] |
+#    "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]) # escapes
+#  )*

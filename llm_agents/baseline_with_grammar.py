@@ -1,17 +1,17 @@
 import os
 from operator import itemgetter
 
-os.environ['LANGCHAIN_TRACING_V2'] = 'true'
-os.environ['LANGCHAIN_ENDPOINT'] = 'https://api.smith.langchain.com'
+# os.environ['LANGCHAIN_TRACING_V2'] = 'true'
+# os.environ['LANGCHAIN_ENDPOINT'] = 'https://api.smith.langchain.com'
+#
+# with open('./secret', 'r') as f:
+#     secret = f.read().strip()
+#
+# os.environ['LANGCHAIN_API_KEY'] = secret
 
-with open('./secret', 'r') as f:
-    secret = f.read().strip()
-
-os.environ['LANGCHAIN_API_KEY'] = secret
 
 
-
-from llm_agents.utils import load_ollama_autoregressive_model, load_llamacpp_autoregressive_model
+from llm_agents.utils import load_ollama_autoregressive_model, load_llamacpp_autoregressive_model, load_hf_auto_regressive_model
 from llm_agents.data_handler import load_entailemnt_tree_dataset, get_processed_entailmenet_dataset
 from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate, FewShotPromptTemplate
@@ -21,19 +21,19 @@ from langchain.prompts.example_selector import NGramOverlapExampleSelector, Sema
 
 def run(llm_name='llama7b', cache_dir=None):
 
-    llm = load_llamacpp_autoregressive_model(model_file=llm_name)
+    llm = load_llamacpp_autoregressive_model(model_file=llm_name, grammar_file='enttree.gbnf')
 
     ## load data and few shot examples ##
     train_examples = load_entailemnt_tree_dataset('./data/entailment_trees/train-task1.jsonl')
     valid_examples = load_entailemnt_tree_dataset('./data/entailment_trees/train-task1.jsonl')
-    train_examples, valid_examples = get_processed_entailmenet_dataset(train_examples, valid_examples)
+    train_examples, valid_examples = get_processed_entailmenet_dataset(train_examples, valid_examples,)
 
     example_prompt = PromptTemplate(
         input_variables=["context", "hypothesis", "proof"],
         template="premises:\n{context}\nhypothesis:\n{hypothesis}\nproof:\n{proof}\n"
     )
 
-    top_k = 3
+    top_k = 5
     example_selector = NGramOverlapExampleSelector(
         examples=train_examples[:top_k],
         example_prompt=example_prompt,
@@ -56,15 +56,16 @@ def run(llm_name='llama7b', cache_dir=None):
         print(prompt.format(**example))
 
         gen_chain = prompt | llm | StrOutputParser()
+        output = gen_chain.invoke(example)
 
-        for chunk in gen_chain.stream(example):
-            print(chunk, end="", flush=True)
+        print("final output:")
+        print(output)
 
         print("\n==================Ground Truth==================")
         print(example['proof'])
         print("================================================")
 
-        break
+        input()
 
 
 if __name__ == '__main__':

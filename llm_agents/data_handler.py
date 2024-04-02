@@ -1,6 +1,6 @@
 import json
 import numpy as np
-
+import re
 
 def load_entailemnt_tree_dataset(path):
     data = []
@@ -11,12 +11,20 @@ def load_entailemnt_tree_dataset(path):
     return data
 
 
-def get_processed_entailmenet_dataset(train_data, valid_data):
+def get_processed_entailmenet_dataset(train_data, valid_data, identifier_description=False):
     np.random.shuffle(train_data)
     np.random.shuffle(valid_data)
 
     def process_context(triples):
         return '\n'.join([f"{k}: {v}" for k, v in triples.items()])
+
+    if identifier_description:
+        for ex in train_data:
+            raw_proof = ex['proof']
+            ids = re.findall(r'(sent\d+)', raw_proof)
+            for id in ids:
+                raw_proof = raw_proof.replace(id, f"{id}: {ex['meta']['triples'][id]}")
+            ex['proof'] = raw_proof
 
     return (
         [{'hypothesis': s['hypothesis'], 'context': process_context(s['meta']['triples']),

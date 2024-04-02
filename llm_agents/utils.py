@@ -45,16 +45,17 @@ def load_llamacpp_embedding_model(base_dir='./models/', model_file='nomic-embed-
     return LlamaCppEmbeddings(model_path=os.path.join(base_dir, model_file), n_batch=512)
 
 
-def load_llamacpp_autoregressive_model(base_dir='./models/', model_file="mistral-7b-instruct"):
+def load_llamacpp_autoregressive_model(base_dir='./models/', model_file="mistral-7b-instruct", grammar_file=None):
     if 'mistral' in model_file:
         model_file = 'mistral-7b-instruct-v0.2.Q4_K_M.gguf'
     elif 'llama' in model_file:
         model_file = 'llama-2-7b-chat.Q4_K_M.gguf'
 
+    grammar_file = os.path.join('models', grammar_file) if grammar_file is not None else grammar_file
     return LlamaCpp(
         model_path=os.path.join(base_dir, model_file),
         n_ctx=2000,
-        grammar_path="models/enttree.gbnf",
+        grammar_path=grammar_file,
     )
 
 

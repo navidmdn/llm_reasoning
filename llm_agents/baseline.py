@@ -1,17 +1,17 @@
 import os
 from operator import itemgetter
 
-os.environ['LANGCHAIN_TRACING_V2'] = 'true'
-os.environ['LANGCHAIN_ENDPOINT'] = 'https://api.smith.langchain.com'
+# os.environ['LANGCHAIN_TRACING_V2'] = 'true'
+# os.environ['LANGCHAIN_ENDPOINT'] = 'https://api.smith.langchain.com'
+#
+# with open('./secret', 'r') as f:
+#     secret = f.read().strip()
+#
+# os.environ['LANGCHAIN_API_KEY'] = secret
 
-with open('./secret', 'r') as f:
-    secret = f.read().strip()
-
-os.environ['LANGCHAIN_API_KEY'] = secret
 
 
-
-from llm_agents.utils import load_ollama_autoregressive_model, load_llamacpp_embedding_model
+from llm_agents.utils import load_ollama_autoregressive_model, load_llamacpp_autoregressive_model, load_hf_auto_regressive_model
 from llm_agents.data_handler import load_entailemnt_tree_dataset, get_processed_entailmenet_dataset
 from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate, FewShotPromptTemplate
@@ -19,14 +19,16 @@ from fire import Fire
 from langchain.prompts.example_selector import NGramOverlapExampleSelector, SemanticSimilarityExampleSelector
 
 
-def run(llm_name='mistral:instruct', cache_dir=None):
+def run(llm_name='llama7b', cache_dir=None):
 
-    llm = load_ollama_autoregressive_model(model_name=llm_name)
+    llm = load_hf_auto_regressive_model(model_name='meta-llama/Llama-2-13b-hf', load_in_4bit=True,
+                                        cache_dir=cache_dir, max_len=100)
 
     ## load data and few shot examples ##
-    train_examples = load_entailemnt_tree_dataset('./data/entailment_trees/train-task1.jsonl')
+    train_examples = load_entailemnt_tree_dataset('./data/entailment_trees/train-task1.jsonl', )
     valid_examples = load_entailemnt_tree_dataset('./data/entailment_trees/train-task1.jsonl')
-    train_examples, valid_examples = get_processed_entailmenet_dataset(train_examples, valid_examples)
+    train_examples, valid_examples = get_processed_entailmenet_dataset(train_examples, valid_examples,
+                                                                       identifier_description=True)
 
     example_prompt = PromptTemplate(
         input_variables=["context", "hypothesis", "proof"],
@@ -47,7 +49,8 @@ def run(llm_name='mistral:instruct', cache_dir=None):
             example_selector=example_selector,
             example_prompt=example_prompt,
             prefix="""You are a reasoning and logical prover. Your task is to generate a natural language proof to reach\
- a hypothesis. Here are a few exapmles and the format you need to follow to generate the proof.""",
+ a hypothesis. Here are a few examples and the format you need to follow to generate the proof. Write your proof in steps\
+ and try to reach the hypothesis by building up step by step""",
             suffix="premises:\n{context}\nhypothesis:\n{hypothesis}\nproof:\n""",
             input_variables=["context", "hypothesis"],
         )
@@ -55,15 +58,16 @@ def run(llm_name='mistral:instruct', cache_dir=None):
         print(prompt.format(**example))
 
         gen_chain = prompt | llm | StrOutputParser()
+        output = gen_chain.invoke(example)
 
-        for chunk in gen_chain.stream(example):
-            print(chunk, end="", flush=True)
+        print("final output:")
+        print(output.split(";")[0])
 
         print("\n==================Ground Truth==================")
         print(example['proof'])
         print("================================================")
 
-        break
+        input()
 
 
 if __name__ == '__main__':
