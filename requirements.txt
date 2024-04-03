@@ -1,0 +1,13 @@
+lightning
+numpy
+transformers
+networkx
+datasets
+tqdm
+scikit-learn
+torchmetrics
+ete3
+lark
+fire
+langchain
+llama-cpp-python

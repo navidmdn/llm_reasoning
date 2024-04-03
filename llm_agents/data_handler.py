@@ -2,7 +2,7 @@ import json
 import numpy as np
 import re
 
-def load_entailemnt_tree_dataset(path):
+def load_dataset(path):
     data = []
     with open(path, 'r') as f:
         for line in f:
@@ -31,5 +31,19 @@ def get_processed_entailmenet_dataset(train_data, valid_data, identifier_descrip
           'proof': s['proof']} for s in train_data],
         [{'hypothesis': s['hypothesis'], 'context': process_context(s['meta']['triples']),
           'proof': s['proof']} for s in valid_data])
+
+def get_processed_proofwriter_dataset(train_data, valid_data):
+    np.random.shuffle(train_data)
+    np.random.shuffle(valid_data)
+    train = []
+    valid = []
+    for ex in train_data:
+        if len(ex['proofs']) > 0:
+            train.append({'hypothesis': ex['hypothesis'], 'context': ex['context'], 'proof': ex['proofs'][0]})
+
+    for ex in valid_data:
+        if len(ex['proofs']) > 0:
+            valid.append({'hypothesis': ex['hypothesis'], 'context': ex['context'], 'proof': ex['proofs'][0]})
+    return train, valid
 
 

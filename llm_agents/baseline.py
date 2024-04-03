@@ -12,23 +12,30 @@ from operator import itemgetter
 
 
 from llm_agents.utils import load_ollama_autoregressive_model, load_llamacpp_autoregressive_model, load_hf_auto_regressive_model
-from llm_agents.data_handler import load_entailemnt_tree_dataset, get_processed_entailmenet_dataset
+from llm_agents.data_handler import load_dataset, get_processed_entailmenet_dataset, get_processed_proofwriter_dataset
 from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate, FewShotPromptTemplate
 from fire import Fire
 from langchain.prompts.example_selector import NGramOverlapExampleSelector, SemanticSimilarityExampleSelector
 
 
-def run(llm_name='llama7b', cache_dir=None):
+def run(llm_name='mistral', ollama=True, dataset='proof-writer', cache_dir=None):
 
-    llm = load_hf_auto_regressive_model(model_name='meta-llama/Llama-2-13b-hf', load_in_4bit=True,
-                                        cache_dir=cache_dir, max_len=100)
+    if ollama:
+        llm = load_ollama_autoregressive_model(model_name=llm_name)
+    else:
+        llm = load_hf_auto_regressive_model(model_name='meta-llama/Llama-2-13b-hf', load_in_4bit=True,
+                                            cache_dir=cache_dir, max_len=100)
 
     ## load data and few shot examples ##
-    train_examples = load_entailemnt_tree_dataset('./data/entailment_trees/train-task1.jsonl', )
-    valid_examples = load_entailemnt_tree_dataset('./data/entailment_trees/train-task1.jsonl')
-    train_examples, valid_examples = get_processed_entailmenet_dataset(train_examples, valid_examples,
-                                                                       identifier_description=True)
+    train_examples = load_dataset(f'./data/{dataset}/meta-train.jsonl')
+    valid_examples = load_dataset(f'./data/{dataset}/meta-dev.jsonl')
+    if dataset == 'proof-writer':
+        train_examples, valid_examples = get_processed_proofwriter_dataset(train_examples, valid_examples)
+
+    elif dataset == 'entailement-tree':
+        train_examples, valid_examples = get_processed_entailmenet_dataset(train_examples, valid_examples,
+                                                                           identifier_description=True)
 
     example_prompt = PromptTemplate(
         input_variables=["context", "hypothesis", "proof"],
