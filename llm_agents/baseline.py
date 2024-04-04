@@ -12,30 +12,38 @@ from operator import itemgetter
 
 
 from llm_agents.utils import load_ollama_autoregressive_model, load_llamacpp_autoregressive_model, load_hf_auto_regressive_model
-from llm_agents.data_handler import load_dataset, get_processed_entailmenet_dataset, get_processed_proofwriter_dataset
+from llm_agents.data_handler import load_dataset, get_processed_entailmenet_dataset, get_processed_proofwriter_dataset, get_processed_entailmenet_dataset_textual
 from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate, FewShotPromptTemplate
 from fire import Fire
 from langchain.prompts.example_selector import NGramOverlapExampleSelector, SemanticSimilarityExampleSelector
 
 
-def run(llm_name='mistral', ollama=True, dataset='proof-writer', cache_dir=None):
+def run(llm_name='mistral:instruct', ollama=True, dataset='entailment_trees', cache_dir=None):
 
     if ollama:
+        print("using ollama model")
         llm = load_ollama_autoregressive_model(model_name=llm_name)
     else:
-        llm = load_hf_auto_regressive_model(model_name='meta-llama/Llama-2-13b-hf', load_in_4bit=True,
+        print("using huggingface model")
+        llm = load_hf_auto_regressive_model(model_name=llm_name, load_in_4bit=True,
                                             cache_dir=cache_dir, max_len=100)
 
-    ## load data and few shot examples ##
-    train_examples = load_dataset(f'./data/{dataset}/meta-train.jsonl')
-    valid_examples = load_dataset(f'./data/{dataset}/meta-dev.jsonl')
     if dataset == 'proof-writer':
+        train_examples = load_dataset(f'./data/{dataset}/meta-train.jsonl')
+        valid_examples = load_dataset(f'./data/{dataset}/meta-dev.jsonl')
+
         train_examples, valid_examples = get_processed_proofwriter_dataset(train_examples, valid_examples)
 
-    elif dataset == 'entailement-tree':
-        train_examples, valid_examples = get_processed_entailmenet_dataset(train_examples, valid_examples,
-                                                                           identifier_description=True)
+    elif dataset == 'entailment_trees':
+        train_examples = load_dataset(f'./data/{dataset}/train-task1.jsonl')
+        valid_examples = load_dataset(f'./data/{dataset}/dev-task1.jsonl')
+
+        # train_examples, valid_examples = get_processed_entailmenet_dataset(train_examples, valid_examples,
+        #                                                                    identifier_description=True)
+        train_examples, valid_examples = get_processed_entailmenet_dataset_textual(train_examples, valid_examples)
+    else:
+        raise ValueError(f"Dataset {dataset} not found")
 
     example_prompt = PromptTemplate(
         input_variables=["context", "hypothesis", "proof"],
@@ -67,8 +75,9 @@ def run(llm_name='mistral', ollama=True, dataset='proof-writer', cache_dir=None)
         gen_chain = prompt | llm | StrOutputParser()
         output = gen_chain.invoke(example)
 
-        print("final output:")
-        print(output.split(";")[0])
+        print("\n==================Generated Proof==================")
+        print(output)
+        print("================================================")
 
         print("\n==================Ground Truth==================")
         print(example['proof'])
