@@ -1,0 +1,23 @@
+WANDB_MODE=online WANDB_ENTITY=navidmdn WANDB_PROJECT=deductor python train_stepwise_deductor.py\
+  --model_name_or_path t5-large\
+  --do_train\
+  --do_eval\
+  --train_file data/train_merged.json\
+  --validation_file data/dev_merged.json\
+  --source_prefix "infere: "\
+  --output_dir outputs/deductor-t5-large\
+  --per_device_train_batch_size 8\
+  --per_device_eval_batch_size 16\
+  --gradient_accumulation_steps 4\
+  --num_train_epochs 10\
+  --save_strategy steps\
+  --save_total_limit 2\
+  --metric_for_best_model eval_loss\
+  --evaluation_strategy steps\
+  --eval_steps 50\
+  --save_steps 50\
+  --logging_steps 25\
+  --overwrite_output_dir\
+  --predict_with_generate\
+  --report_to wandb\
+  --load_best_model_at_end

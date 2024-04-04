@@ -105,15 +105,23 @@ def preprocess_entailmenttree(base_path, split='dev'):
 
     return extracted_steps
 
-
-def merge_entailmenttree_ruletaker(paths, output, split='train'):
+def merge_entailmenttree_ruletaker(paths, output, split='train', merge_equal=False):
     all_lines = []
+    ds_list = []
     for path in paths:
         print("loading from ", path, "...")
-        train_path = os.path.join(path, f'{split}.jsonl')
+        train_path = os.path.join(path, f'{split}.json')
         with open(train_path, 'r') as fp:
             lines = fp.readlines()
-            all_lines.extend(lines)
+            ds_list.append(lines)
+
+    if merge_equal:
+        sizes = [len(ds) for ds in ds_list]
+        min_size = min(sizes)
+
+        for i, ds in enumerate(ds_list):
+            np.random.shuffle(ds)
+            all_lines.extend(ds[:min_size])
 
     with open(output, 'w') as fp:
         np.random.shuffle(all_lines)
@@ -124,14 +132,16 @@ def main():
     parser = argparse.ArgumentParser()
     # parser.add_argument('--input_path', type=str, default='data/proofwriter-dataset-V2020.12.3/preprocessed_OWA')
     # parser.add_argument('--output_path', type=str, default='data/proofwriter-stepwise_proofs/')
-    parser.add_argument('--dataset', type=str, default='entailmenttree', options=['entailmenttree', 'ruletaker'])
+    parser.add_argument('--dataset', type=str, default='ruletaker', choices=['entailmenttree', 'ruletaker'])
     parser.add_argument('--merge', nargs='+', default=None, help='a list of preprocessed dataset to merge')
-    parser.add_argument('--input_path', type=str, default='data/entailment_trees_emnlp2021_data_v3')
-    parser.add_argument('--output_path', type=str, default='data/entailmenttree-stepwise_proofs/')
+    # parser.add_argument('--input_path', type=str, default='data/entailment_trees_emnlp2021_data_v3')
+    # parser.add_argument('--output_path', type=str, default='data/entailmenttree-stepwise_proofs/')
+    parser.add_argument('--output_path', type=str, default='data/train_merged.jsonl')
+    parser.add_argument('--merge-equal', action='store_true', help='merge equal number of examples from each dataset')
     args = parser.parse_args()
 
     if args.merge is not None:
-        merge_entailmenttree_ruletaker(args.merge, args.output_path, split='train')
+        merge_entailmenttree_ruletaker(args.merge, args.output_path, split='train', merge_equal=args.merge_equal)
         return
 
     os.makedirs(args.output_path, exist_ok=True)
@@ -148,7 +158,8 @@ def main():
         print("writing to file...")
         with open(os.path.join(args.output_path, f'{split}.jsonl'), 'w') as fp:
             for step in extracted_steps:
-                premises = '. '.join(step[0])
+                premises = ' [AND] '.join(step[0])
+                premises = premises + ' [INFER]'
                 conclusion = step[1]
                 fp.write(json.dumps({'premises': premises, 'conclusion': conclusion}) + '\n')
 
