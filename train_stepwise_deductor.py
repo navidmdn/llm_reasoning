@@ -508,6 +508,7 @@ def main():
         if "train" not in raw_datasets:
             raise ValueError("--do_train requires a train dataset")
         column_names = raw_datasets["train"].column_names
+        print(column_names)
     elif training_args.do_eval:
         if "validation" not in raw_datasets:
             raise ValueError("--do_eval requires a validation dataset")

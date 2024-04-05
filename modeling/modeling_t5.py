@@ -2314,7 +2314,7 @@ class RestrictedT5ForConditionalGeneration(T5PreTrainedModel):
     _keys_to_ignore_on_load_unexpected = [
         "decoder.block.0.layer.1.EncDecAttention.relative_attention_bias.weight",
     ]
-    _tied_weights_keys = ["encoder.embed_tokens.weight", "decoder.embed_tokens.weight"]
+    _tied_weights_keys = ["encoder.embed_tokens.weight", "decoder.embed_tokens.weight", "lm_head.weight"]
 
     def __init__(self, config: T5Config):
         super().__init__(config)
@@ -2338,7 +2338,8 @@ class RestrictedT5ForConditionalGeneration(T5PreTrainedModel):
             self.orig_to_restricted_mapping = json.load(f)
 
         #todo: appparantly doesn't work properly when using a pretrained model should do it separately outside
-        self.lm_head = nn.Linear(config.d_model, len(self.orig_to_restricted_mapping), bias=False)
+        self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
+        self.restriction_prj = nn.Linear(config.vocab_size, len(self.orig_to_restricted_mapping), bias=False)
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -2537,12 +2538,14 @@ class RestrictedT5ForConditionalGeneration(T5PreTrainedModel):
             sequence_output = sequence_output * (self.model_dim**-0.5)
 
         lm_logits = self.lm_head(sequence_output)
+        lm_logits = self.restriction_prj(lm_logits)
 
         loss = None
         if labels is not None:
             loss_fct = CrossEntropyLoss(ignore_index=-100)
             # move labels to correct device to enable PP
             labels = labels.to(lm_logits.device)
+            # print(labels, torch.argmax(lm_logits, dim=-1))
             loss = loss_fct(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1))
             # TODO(thom): Add z_loss https://github.com/tensorflow/mesh/blob/fa19d69eafc9a482aff0b59ddd96b025c0cb207d/mesh_tensorflow/layers.py#L666
 

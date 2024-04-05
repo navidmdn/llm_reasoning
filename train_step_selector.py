@@ -39,7 +39,6 @@ from transformers import (
     AutoConfig,
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
-    DataCollatorForSeq2Seq,
     HfArgumentParser,
     MBart50Tokenizer,
     MBart50TokenizerFast,
@@ -53,6 +52,7 @@ from modeling.modeling_t5 import RestrictedT5ForConditionalGeneration
 from transformers.trainer_callback import EarlyStoppingCallback
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, is_offline_mode, send_example_telemetry
+from modeling.data_collator import DataCollatorForSeq2Seq
 from transformers.utils.versions import require_version
 
 
@@ -476,11 +476,7 @@ def main():
             revision=model_args.model_revision,
             token=model_args.token,
             trust_remote_code=model_args.trust_remote_code,
-            ignore_mismatched_sizes=True,
         )
-
-        model.lm_head = torch.nn.Linear(model.config.d_model, len(orig_token_ids_to_restricted_map), bias=False)
-        model.lm_head.weight.data.normal_(mean=0.0, std=0.02)
 
     else:
         model = AutoModelForSeq2SeqLM.from_pretrained(
@@ -626,6 +622,7 @@ def main():
         # convert label ids to restricted vocab ids
         labels_ids = []
         if data_args.restricted_vocab_path is not None:
+            model_inputs["original_labels"] = labels["input_ids"].copy()
             for label in labels["input_ids"]:
                 cur_label_ids = []
                 for l in label:
@@ -689,6 +686,7 @@ def main():
                 desc="Running tokenizer on prediction dataset",
             )
 
+
     # Data collator
     label_pad_token_id = -100 if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id
     data_collator = DataCollatorForSeq2Seq(
@@ -697,6 +695,17 @@ def main():
         label_pad_token_id=label_pad_token_id,
         pad_to_multiple_of=8 if training_args.fp16 else None,
     )
+
+    # for test
+    # from torch.utils.data import DataLoader
+    # dl = DataLoader(
+    #     eval_dataset,
+    #     collate_fn=data_collator,
+    #     batch_size=10,
+    #     shuffle=False,
+    # )
+    # print(next(iter(dl)))
+    # exit()
 
     # Metric
     metric = evaluate.load("rouge", cache_dir=model_args.cache_dir)
@@ -718,24 +727,40 @@ def main():
         preds, labels = eval_preds
         if isinstance(preds, tuple):
             preds = preds[0]
+
         # Replace -100s used for padding as we can't decode them
+        # print("================ initial labels =================")
+        # print(labels)
+        # print("================ initial preds =================")
+        # print(preds)
 
         preds = np.where(preds != -100, preds, tokenizer.pad_token_id)
         labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
 
         if data_args.restricted_vocab_path is not None:
-            preds = [convert_restricted_seq_to_original_seq(pred) for pred in preds]
-            labels = [convert_restricted_seq_to_original_seq(label) for label in labels]
+            preds = np.array([convert_restricted_seq_to_original_seq(pred) for pred in preds])
+            labels = np.array([convert_restricted_seq_to_original_seq(label) for label in labels])
+
+        # print("================ preds =================")
+        # print(preds)
+        # print("================ labels =================")
+        # print(labels)
 
         decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
 
+        print("================ decoded_preds =================")
+        print(decoded_preds)
+        print("================ decoded_labels =================")
+        print(decoded_labels)
         # Some simple post-processing
         decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
 
         result = metric.compute(predictions=decoded_preds, references=decoded_labels, use_stemmer=True)
         result = {k: round(v * 100, 4) for k, v in result.items()}
+
         prediction_lens = [np.count_nonzero(pred != tokenizer.pad_token_id) for pred in preds]
+
         result["gen_len"] = np.mean(prediction_lens)
         return result
 
