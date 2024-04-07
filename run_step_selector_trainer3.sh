@@ -1,6 +1,6 @@
 #using a regular seq2seq trainer
 WANDB_MODE=online WANDB_ENTITY=navidmdn WANDB_PROJECT=selector python train_seq2seq.py\
-  --model_name_or_path t5-large\
+  --model_name_or_path google/flan-t5-large\
   --text_column premises\
   --summary_column steps\
   --cache_dir ../hfcache\
@@ -8,8 +8,8 @@ WANDB_MODE=online WANDB_ENTITY=navidmdn WANDB_PROJECT=selector python train_seq2
   --do_eval\
   --train_file data/selector_train_merged.json\
   --validation_file data/selector_dev_merged.json\
-  --source_prefix "select steps: "\
-  --output_dir outputs/selector-t5-large-v2\
+  --source_prefix "select the best steps for induction in forward reasoning from the following premises:\n"\
+  --output_dir outputs/selector-flant5-large\
   --per_device_train_batch_size 8\
   --per_device_eval_batch_size 16\
   --gradient_accumulation_steps 4\

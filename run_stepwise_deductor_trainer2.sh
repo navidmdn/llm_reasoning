@@ -1,4 +1,4 @@
-WANDB_MODE=online WANDB_ENTITY=navidmdn WANDB_PROJECT=deductor python train_stepwise_deductor.py\
+WANDB_MODE=online WANDB_ENTITY=navidmdn WANDB_PROJECT=deductor python train_seq2seq.py\
   --model_name_or_path facebook/bart-large\
   --do_train\
   --do_eval\

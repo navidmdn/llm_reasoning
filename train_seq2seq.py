@@ -35,6 +35,7 @@ from filelock import FileLock
 import transformers
 from transformers import (
     AutoConfig,
+    GenerationConfig,
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
     DataCollatorForSeq2Seq,
@@ -51,6 +52,7 @@ from transformers.trainer_callback import EarlyStoppingCallback
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, is_offline_mode, send_example_telemetry
 from transformers.utils.versions import require_version
+from evaluate_selector import permutation_invariant_metrics
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -258,6 +260,17 @@ class DataTrainingArguments:
             )
         },
     )
+
+    num_return_sequences: Optional[int] = field(
+        default=1,
+        metadata={
+            "help": (
+                "Number of beams to use for evaluation. This argument will be passed to ``model.generate``, "
+                "which is used during ``evaluate`` and ``predict``."
+            )
+        },
+    )
+
     ignore_pad_token_for_loss: bool = field(
         default=True,
         metadata={
@@ -601,7 +614,7 @@ def main():
                 batched=True,
                 num_proc=data_args.preprocessing_num_workers,
                 remove_columns=column_names,
-                load_from_cache_file=not data_args.overwrite_cache,
+                load_from_cache_file=False,#not data_args.overwrite_cache,
                 desc="Running tokenizer on train dataset",
             )
 
@@ -617,7 +630,7 @@ def main():
                 batched=True,
                 num_proc=data_args.preprocessing_num_workers,
                 remove_columns=column_names,
-                load_from_cache_file=not data_args.overwrite_cache,
+                load_from_cache_file=False,#not data_args.overwrite_cache,
                 desc="Running tokenizer on validation dataset",
             )
 
@@ -661,6 +674,7 @@ def main():
 
     def compute_metrics(eval_preds):
         preds, labels = eval_preds
+
         if isinstance(preds, tuple):
             preds = preds[0]
         # Replace -100s used for padding as we can't decode them
@@ -669,6 +683,13 @@ def main():
         labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
 
+        # keeping best prediction for rouge calculation in case of multiple outputs
+        perm_inv_metrics = {}
+        if data_args.num_return_sequences > 1:
+            perm_inv_metrics = permutation_invariant_metrics(decoded_preds, decoded_labels,
+                                                             data_args.num_return_sequences)
+            decoded_preds = decoded_preds[0::data_args.num_return_sequences]
+
         # Some simple post-processing
         decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
 
@@ -676,6 +697,7 @@ def main():
         result = {k: round(v * 100, 4) for k, v in result.items()}
         prediction_lens = [np.count_nonzero(pred != tokenizer.pad_token_id) for pred in preds]
         result["gen_len"] = np.mean(prediction_lens)
+        result.update(**perm_inv_metrics)
         return result
 
     # Override the decoding parameters of Seq2SeqTrainer
@@ -686,6 +708,17 @@ def main():
     )
     training_args.generation_num_beams = (
         data_args.num_beams if data_args.num_beams is not None else training_args.generation_num_beams
+    )
+
+    num_beams = data_args.num_beams if data_args.num_beams is not None else training_args.generation_num_beams
+    training_args.generation_config = GenerationConfig(
+        max_length=data_args.max_target_length,
+        num_beams=num_beams,
+        do_sample=True,
+        num_return_sequences=min(data_args.num_return_sequences, num_beams),
+        decoder_start_token_id=config.decoder_start_token_id,
+        eos_token_id=config.eos_token_id,
+        pad_token_id=config.pad_token_id,
     )
 
     # Initialize our Trainer

@@ -37,6 +37,7 @@ from filelock import FileLock
 import transformers
 from transformers import (
     AutoConfig,
+    GenerationConfig,
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
     HfArgumentParser,
@@ -54,6 +55,7 @@ from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, is_offline_mode, send_example_telemetry
 from modeling.data_collator import DataCollatorForSeq2Seq
 from transformers.utils.versions import require_version
+from evaluate_selector import permutation_invariant_metrics
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -261,6 +263,16 @@ class DataTrainingArguments:
             )
         },
     )
+    num_return_sequences: Optional[int] = field(
+        default=1,
+        metadata={
+            "help": (
+                "Number of beams to use for evaluation. This argument will be passed to ``model.generate``, "
+                "which is used during ``evaluate`` and ``predict``."
+            )
+        },
+    )
+
     ignore_pad_token_for_loss: bool = field(
         default=True,
         metadata={
@@ -725,6 +737,8 @@ def main():
 
     def compute_metrics(eval_preds):
         preds, labels = eval_preds
+
+        # preds are flattened version of multiple generated beams
         if isinstance(preds, tuple):
             preds = preds[0]
 
@@ -749,12 +763,20 @@ def main():
         decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
 
-        print("================ decoded_preds =================")
-        print(decoded_preds)
-        print("================ decoded_labels =================")
-        print(decoded_labels)
+        # keeping best prediction for rouge calculation in case of multiple outputs
+        perm_inv_metrics = {}
+        if data_args.num_return_sequences > 1:
+            perm_inv_metrics = permutation_invariant_metrics(decoded_preds, decoded_labels,
+                                                             data_args.num_return_sequences)
+            decoded_preds = decoded_preds[0::data_args.num_return_sequences]
+
         # Some simple post-processing
         decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
+
+        print("================ decoded_preds =================")
+        print(decoded_preds[:10])
+        print("================ decoded_labels =================")
+        print(decoded_labels[:10])
 
         result = metric.compute(predictions=decoded_preds, references=decoded_labels, use_stemmer=True)
         result = {k: round(v * 100, 4) for k, v in result.items()}
@@ -762,6 +784,7 @@ def main():
         prediction_lens = [np.count_nonzero(pred != tokenizer.pad_token_id) for pred in preds]
 
         result["gen_len"] = np.mean(prediction_lens)
+        result.update(**perm_inv_metrics)
         return result
 
     # Override the decoding parameters of Seq2SeqTrainer
@@ -772,6 +795,17 @@ def main():
     )
     training_args.generation_num_beams = (
         data_args.num_beams if data_args.num_beams is not None else training_args.generation_num_beams
+    )
+
+    num_beams = data_args.num_beams if data_args.num_beams is not None else training_args.generation_num_beams
+    training_args.generation_config = GenerationConfig(
+        max_length=data_args.max_target_length,
+        num_beams=num_beams,
+        do_sample=True,
+        num_return_sequences=min(data_args.num_return_sequences, num_beams),
+        decoder_start_token_id=config.decoder_start_token_id,
+        eos_token_id=config.eos_token_id,
+        pad_token_id=config.pad_token_id,
     )
 
     # Initialize our Trainer

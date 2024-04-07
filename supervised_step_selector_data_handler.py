@@ -33,7 +33,7 @@ def extract_ruletaker_steps(example: Dict):
     sents = example['context']
     sents = re.split(r'sent\d+:', sents)
     sents = [s.strip() for s in sents if len(s) > 0]
-    sents_d = {'hypothesis': example['hypothesis']}
+    sents_d = {}
     for i, s in enumerate(sents):
         sents_d[f'sent{i+1}'] = s
 
@@ -53,10 +53,6 @@ def extract_ruletaker_steps(example: Dict):
             match = match[0].strip()
             conclusion = re.sub(r'^int\d+:', '', conclusion).strip()
             sents_d[match] = conclusion
-        elif conclusion == 'hypothesis':
-            #todo: avoiding negatiion hypothesises
-            continue
-            # conclusion = sents_d['hypothesis']
 
     return results
 
@@ -82,7 +78,7 @@ def extract_entailmenttree_steps(example: Dict):
     sents = example['context']
     sents = re.split(r'sent\d+:', sents)
     sents = [s.strip() for s in sents if len(s) > 0]
-    sents_d = {'hypothesis': example['hypothesis']}
+    sents_d = {}
     for i, s in enumerate(sents):
         sents_d[f'sent{i+1}'] = s
 
@@ -103,12 +99,11 @@ def extract_entailmenttree_steps(example: Dict):
             conclusion = re.sub(r'^int\d+:', '', conclusion).strip()
             sents_d[match] = conclusion
         elif conclusion == 'hypothesis':
-            conclusion = sents_d['hypothesis']
+            continue
         else:
             raise Exception("Invalid conclusion")
 
     return results
-
 
 def preprocess_entailmenttree(base_path, split='dev'):
 
@@ -152,11 +147,11 @@ def main():
     parser = argparse.ArgumentParser()
     # parser.add_argument('--input_path', type=str, default='data/proofwriter-dataset-V2020.12.3/preprocessed_OWA')
     # parser.add_argument('--output_path', type=str, default='data/proofwriter-selector/')
-    parser.add_argument('--dataset', type=str, default='ruletaker', choices=['entailmenttree', 'ruletaker'])
+    parser.add_argument('--dataset', type=str, default='entailmenttree', choices=['entailmenttree', 'ruletaker'])
     parser.add_argument('--merge', nargs='+', default=None, help='a list of preprocessed dataset to merge')
-    # parser.add_argument('--input_path', type=str, default='data/entailment_trees_emnlp2021_data_v3')
-    # parser.add_argument('--output_path', type=str, default='data/entailmenttree-selector/')
-    parser.add_argument('--output_path', type=str, default='data/selector_dev_merged.json')
+    parser.add_argument('--input_path', type=str, default='data/entailment_trees_emnlp2021_data_v3')
+    parser.add_argument('--output_path', type=str, default='data/entailmenttree-selector/')
+    # parser.add_argument('--output_path', type=str, default='data/selector_dev_merged.json')
     parser.add_argument('--merge-equal', action='store_true', help='merge equal number of examples from each dataset')
     args = parser.parse_args()
 
