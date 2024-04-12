@@ -1,8 +1,11 @@
+import numpy as np
 from fire import Fire
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, PreTrainedTokenizer, PreTrainedModel
 import json
-from typing import List, Dict, Tuple, Set
+from typing import List, Dict, Tuple, Set, Union, FrozenSet
 import re
+from tqdm import tqdm
+
 
 class SearchState:
     def __init__(self, example: Dict):
@@ -28,8 +31,11 @@ class SearchState:
         self.hypothesis = example['hypothesis']
 
     def has_reached_hypothesis(self) -> bool:
-        #todo: a sort of check between nodes and hypothesis to see if we've reached the hypothesis
-        return False
+        #todo: implement a better hypothesis for this (rouge1/f1/etc.)
+        last_proof = self.get_last_proof()
+        if last_proof is None:
+            return False
+        return self.hypothesis == last_proof
 
     def add_proof_step(self, proof: str, step: Set[str]):
         next_int_id = self.num_inferred_nodes + 1
@@ -38,6 +44,16 @@ class SearchState:
         step_txt = " & ".join(step)
         self.proof_steps.append(f"{step_txt} -> int{next_int_id}: {proof}")
 
+    def get_selection_prompt(self) -> str:
+        prefix = "select the best steps for induction in forward reasoning from the following premises:\n"
+        premises = "\n".join([f"{k}: {v}" for k, v in self.context.items()])
+        context = f"premises:\n{premises}\nhypothesis:\n{self.hypothesis}\nproof steps: "
+        return f"{prefix}{context}"
+
+    def get_last_proof(self) -> Union[str, None]:
+        if len(self.intermediates) == 0:
+            return None
+        return self.intermediates[f'int{self.num_inferred_nodes}']
 
     def process_identified_context(self, context: str) -> Dict[str, str]:
         """
@@ -52,34 +68,35 @@ class SearchState:
         return sents_d
 
     def preprocess_example(self, example: Dict, dataset: str):
-        if self.dataset == 'entailmentbank':
+        if dataset == 'entailmentbank':
             self.preprocess_entailmentbank_example(example)
-        elif self.dataset == 'ruletaker':
+        elif dataset == 'ruletaker':
             self.preprocess_ruletaker_example(example)
         else:
             raise ValueError(f"Unknown dataset {self.dataset}")
 
 
-def process_generated_steps(generated_steps: str) -> Set[str]:
+def process_generated_steps(generated_steps: str) -> FrozenSet[str]:
     if " & " not in generated_steps:
-        return set([])
+        return frozenset([])
 
     steps = generated_steps.split(" & ")
-    return set([step.strip() for step in steps])
+    return frozenset([step.strip() for step in steps])
+
 
 def sample_steps(selector: PreTrainedModel, selector_tokenizer: PreTrainedTokenizer, search_state: SearchState,
                  top_k: int = 3) ->\
-        Tuple[List[Set[str]], List[float]]:
+        Tuple[List[FrozenSet[str]], List[float]]:
     """
     Sample the next steps to take in the proof search. It will return a list which each element is a list of
     identifiers of the steps to take. Also returns a list of scores for each of the sampled steps.
     """
-    prefix = "select the best steps for induction in forward reasoning from the following premises:\n"
-    input_txt = f"{prefix}{search_state.get_context_str()}"
+    input_txt = search_state.get_selection_prompt()
+
+    print("selection prompt:")
+    pprint(input_txt)
 
     inputs = selector_tokenizer(input_txt, return_tensors='pt')
-    print(inputs['input_ids'].shape)
-
     outputs = selector.generate(**inputs, max_length=100, num_return_sequences=top_k, num_beams=top_k,
                                 do_sample=True)
     step_texts = selector_tokenizer.batch_decode(outputs, skip_special_tokens=True)
@@ -107,23 +124,33 @@ def apply_deductor(deductor, deductor_tokenizer, search_state: SearchState, next
         step_texts.append(search_state.context[step].strip())
 
     input_txt = prefix + " [AND] ".join(step_texts) + " [INFER]"
+    print(f"deductor input: {input_txt}")
     inputs = deductor_tokenizer(input_txt, return_tensors='pt')
     outputs = deductor.generate(**inputs, max_length=100, num_return_sequences=1, num_beams=5)
     generated_text = deductor_tokenizer.batch_decode(outputs, skip_special_tokens=True)[0]
     search_state.add_proof_step(generated_text, next_step)
     return search_state
 
+
 def greedy_proof_search(example: Dict, deductor: PreTrainedModel, deductor_tokenizer: PreTrainedTokenizer,
-                 selector: PreTrainedModel, selector_tokenizer: PreTrainedTokenizer, n_iters: int = 3):
+                 selector: PreTrainedModel, selector_tokenizer: PreTrainedTokenizer, n_iters: int = 6):
     search_state = SearchState(example)
-    proof = ""
     iterations = 0
 
     while not search_state.has_reached_hypothesis() and iterations < n_iters:
+        pprint(f"step {iterations + 1}")
         next_steps, _ = sample_steps(selector, selector_tokenizer, search_state)
         next_step = next_steps[0]
+        print("Next step: ", next_step)
         search_state = apply_deductor(deductor, deductor_tokenizer, search_state, next_step)
+        pprint("Current proof step: " + search_state.proof_steps[-1])
         iterations += 1
+
+
+def pprint(txt: str):
+    print("====================================")
+    print(txt)
+    print("====================================")
 
 def load_examples(test_data_path: str):
     with open(test_data_path, 'r') as f:
@@ -141,9 +168,20 @@ def run(deductor_path: str, selector_path: str, test_data_path: str, ):
     selector, selector_tokenizer = load_model_and_tokenizer(selector_path)
 
     examples = load_examples(test_data_path)
+    np.random.shuffle(examples)
 
-    for example in examples:
-        proof_search(example, deductor, deductor_tokenizer, selector, selector_tokenizer)
+    for example in tqdm(examples):
+        #todo: make sure false examples are not in dataset
+        if 'depth' in example and (example['depth'] is None or example['depth'] < 1 or example['answer'] is False):
+            continue
+        greedy_proof_search(example, deductor, deductor_tokenizer, selector, selector_tokenizer)
+
+        print("*" * 50)
+        print("Ground truth proof:")
+        print(example['proof'] if 'proof' in example else example['proofs'])
+        print("*" * 50)
+
+        input()
 
 
 if __name__ == '__main__':
