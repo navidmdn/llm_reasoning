@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 from fire import Fire
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, PreTrainedTokenizer, PreTrainedModel
@@ -5,18 +7,27 @@ import json
 from typing import List, Dict, Tuple, Set, Union, FrozenSet
 import re
 from tqdm import tqdm
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+import torch
+from collections import OrderedDict
 
 
 class SearchState:
-    def __init__(self, example: Dict):
+    def __init__(self, example: Dict, cache_dir = None):
         if 'meta' in example:
             self.dataset = 'entailmentbank'
         else:
             self.dataset = 'ruletaker'
 
         self.preprocess_example(example, self.dataset)
-        self.intermediates = {}
+        self.intermediates = OrderedDict()
         self.proof_steps = []
+
+        self.bleurt_tokenizer = AutoTokenizer.from_pretrained("Elron/bleurt-large-512", cache_dir=cache_dir)
+        self.bleurt_model = AutoModelForSequenceClassification.from_pretrained("Elron/bleurt-large-512", cache_dir=cache_dir)
+        self.bleurt_model.eval()
+
+        self.hypothesis_acceptance_threshold = 0.9
 
     def __repr__(self):
         current_context = "\n".join([f"{k}: {v}" for k, v in self.context.items()])
@@ -27,6 +38,17 @@ class SearchState:
     def num_inferred_nodes(self):
         return len(self.intermediates)
 
+    def get_formatted_full_proof(self) -> str:
+        if len(self.proof_steps) == 0:
+            return "$proof$ = "
+        last_step = self.proof_steps[-1]
+        prev_steps = self.proof_steps[:-1]
+        last_step_premises = last_step.split("->")[0].strip()
+        last_step_formatted = f"{last_step_premises} -> hypothesis"
+        prev_steps.append(last_step_formatted)
+        full_proof = f"$proof$ = {'; '.join(prev_steps)};"
+        return full_proof
+
     def preprocess_entailmentbank_example(self, example: Dict):
         self.context = self.process_identified_context(example['context'])
         self.hypothesis = example['hypothesis']
@@ -36,11 +58,14 @@ class SearchState:
         self.hypothesis = example['hypothesis']
 
     def has_reached_hypothesis(self) -> bool:
-        #todo: implement a better hypothesis for this (rouge1/f1/etc.)
         last_proof = self.get_last_proof()
         if last_proof is None:
             return False
-        return self.hypothesis == last_proof
+        with torch.no_grad():
+            inp = self.bleurt_tokenizer([self.hypothesis], [last_proof], return_tensors='pt')
+            score = self.bleurt_model(**inp)[0].squeeze().item()
+        # print("Bleurt score: ", score)
+        return score > self.hypothesis_acceptance_threshold
 
     def add_proof_step(self, proof: str, step: Set[str]):
         next_int_id = self.num_inferred_nodes + 1
@@ -67,7 +92,7 @@ class SearchState:
         """
         sents = re.split(r'sent\d+:', context)
         sents = [s.strip() for s in sents if len(s) > 0]
-        sents_d = {}
+        sents_d = OrderedDict()
         for i, s in enumerate(sents):
             sents_d[f'sent{i + 1}'] = s
         return sents_d
@@ -113,7 +138,7 @@ def sample_steps(selector: PreTrainedModel, selector_tokenizer: PreTrainedTokeni
     for step_text, score in zip(step_texts, scores):
         step_ids = process_generated_steps(step_text)
         if len(step_ids) == 0:
-            continue
+            raise ValueError("No steps were generated")
         if step_ids not in samples:
             samples.append(step_ids)
             sample_scores.append(score)
@@ -142,23 +167,28 @@ def apply_deductor(deductor, deductor_tokenizer, search_state: SearchState, next
 
 
 def greedy_proof_search(example: Dict, deductor: PreTrainedModel, deductor_tokenizer: PreTrainedTokenizer,
-                 selector: PreTrainedModel, selector_tokenizer: PreTrainedTokenizer, n_iters: int = 6):
-    search_state = SearchState(example)
+                 selector: PreTrainedModel, selector_tokenizer: PreTrainedTokenizer,
+                 cache_dir=None, n_iters: int = 5) -> str:
+    search_state = SearchState(example, cache_dir=cache_dir)
     iterations = 0
-    print(search_state)
+    # print(search_state)
+    try:
+        while not search_state.has_reached_hypothesis() and iterations < n_iters:
+            # pprint(f"step {iterations + 1}")
+            next_steps, _ = sample_steps(selector, selector_tokenizer, search_state)
+            next_step = next_steps[0]
+            # print("Next step: ", next_step)
+            search_state = apply_deductor(deductor, deductor_tokenizer, search_state, next_step)
+            # pprint("Current proof step: " + search_state.proof_steps[-1])
+            iterations += 1
 
-    while not search_state.has_reached_hypothesis() and iterations < n_iters:
-        # pprint(f"step {iterations + 1}")
-        next_steps, _ = sample_steps(selector, selector_tokenizer, search_state)
-        next_step = next_steps[0]
-        # print("Next step: ", next_step)
-        search_state = apply_deductor(deductor, deductor_tokenizer, search_state, next_step)
-        # pprint("Current proof step: " + search_state.proof_steps[-1])
-        iterations += 1
+        # for proof_step in search_state.proof_steps:
+        #     pprint(proof_step)
+    except Exception as e:
+        print("Failed to generate proof for this example!")
+        print(e)
 
-    for proof_step in search_state.proof_steps:
-        pprint(proof_step)
-
+    return search_state.get_formatted_full_proof()
 
 def pprint(txt: str):
     print("====================================")
@@ -175,7 +205,7 @@ def load_model_and_tokenizer(model_name: str):
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     return model, tokenizer
 
-def run(deductor_path: str, selector_path: str, test_data_path: str, ):
+def run(deductor_path: str, selector_path: str, test_data_path: str, output_dir: str, cache_dir = None):
 
     deductor, deductor_tokenizer = load_model_and_tokenizer(deductor_path)
     selector, selector_tokenizer = load_model_and_tokenizer(selector_path)
@@ -183,18 +213,23 @@ def run(deductor_path: str, selector_path: str, test_data_path: str, ):
     examples = load_examples(test_data_path)
     np.random.shuffle(examples)
 
+    results = []
     for example in tqdm(examples):
         #todo: make sure false examples are not in dataset
         if 'depth' in example and (example['depth'] is None or example['depth'] < 1 or example['answer'] is False):
             continue
-        greedy_proof_search(example, deductor, deductor_tokenizer, selector, selector_tokenizer)
+        proof = greedy_proof_search(example, deductor, deductor_tokenizer, selector, selector_tokenizer, cache_dir)
+        results.append(proof)
 
-        print("*" * 50)
-        print("Ground truth proof:")
-        print(example['proof'] if 'proof' in example else example['proofs'])
-        print("*" * 50)
+        # print("*" * 50)
+        # print("Ground truth proof:")
+        # print(example['proof'] if 'proof' in example else example['proofs'])
+        # print("*" * 50)
+    os.makedirs(output_dir, exist_ok=True)
+    output_file_name = test_data_path.split('/')[-1]
+    with open(os.path.join(output_dir, output_file_name.replace('.jsonl', '.tsv')), 'w') as f:
+        f.write("\n".join(results))
 
-        input()
 
 if __name__ == '__main__':
     Fire(run)

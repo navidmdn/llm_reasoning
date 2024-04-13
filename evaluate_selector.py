@@ -3,11 +3,24 @@ import numpy as np
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 import json
 from typing import List, Dict, Tuple
+import re
 
 
-def _permutation_invariant_match(pred: str, target: str) -> bool:
+def has_correct_format(pred: str) -> bool:
     if ' & ' not in pred:
         return False
+    pred = pred.split(' & ')
+    pred = [p.strip() for p in pred]
+
+    for p in pred:
+        if not re.match(r'^int\d+$', p) and not re.match(r'^sent\d+$', p):
+            return False
+    return True
+
+def _permutation_invariant_match(pred: str, target: str) -> bool:
+    if not has_correct_format(pred):
+        return False
+
     pred = pred.split(' & ')
     target = target.split(' & ')
 
@@ -21,20 +34,32 @@ def permutation_invariant_metrics(preds: List[str], targets: List[str], num_pred
     i = 0
     topk_match = 0
     top1_match = 0
-    while i < len(targets):
-        for k, j in enumerate(range(i*num_pred_seq, i*num_pred_seq+num_pred_seq)):
+    diversity_scores = []
 
+    while i < len(targets):
+        found_match = False
+        distinct_preds = set()
+        for k, j in enumerate(range(i*num_pred_seq, i*num_pred_seq+num_pred_seq)):
             match = _permutation_invariant_match(preds[j], targets[i])
             if match:
+                found_match = True
                 if k == 0:
                     top1_match += 1
-                topk_match += 1
-                break
 
+            if has_correct_format(preds[j]):
+                distinct_preds.add(preds[j])
+
+        if found_match:
+            topk_match += 1
+
+        diversity_scores.append(len(distinct_preds) / num_pred_seq)
         i += 1
+
     return {
         'top1_acc': top1_match / len(targets),
-        f'top{num_pred_seq}_acc': topk_match / len(targets)
+        f'top{num_pred_seq}_acc': topk_match / len(targets),
+        'diversity': np.mean(diversity_scores),
+        'diversity_acc_score': np.mean(diversity_scores) * (topk_match / len(targets))
     }
 
 
