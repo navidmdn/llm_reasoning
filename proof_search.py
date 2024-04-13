@@ -18,6 +18,11 @@ class SearchState:
         self.intermediates = {}
         self.proof_steps = []
 
+    def __repr__(self):
+        current_context = "\n".join([f"{k}: {v}" for k, v in self.context.items()])
+        intermediates = "\n".join([f"{k}: {v}" for k, v in self.intermediates.items()])
+        return f"Current context:\n{current_context}\nIntermediates:\n{intermediates}\nHypothesis: {self.hypothesis}"
+
     @property
     def num_inferred_nodes(self):
         return len(self.intermediates)
@@ -85,7 +90,7 @@ def process_generated_steps(generated_steps: str) -> FrozenSet[str]:
 
 
 def sample_steps(selector: PreTrainedModel, selector_tokenizer: PreTrainedTokenizer, search_state: SearchState,
-                 top_k: int = 3) ->\
+                 top_k: int = 5) ->\
         Tuple[List[FrozenSet[str]], List[float]]:
     """
     Sample the next steps to take in the proof search. It will return a list which each element is a list of
@@ -93,24 +98,28 @@ def sample_steps(selector: PreTrainedModel, selector_tokenizer: PreTrainedTokeni
     """
     input_txt = search_state.get_selection_prompt()
 
-    print("selection prompt:")
-    pprint(input_txt)
+    # print("selection prompt:")
+    # pprint(input_txt)
 
     inputs = selector_tokenizer(input_txt, return_tensors='pt')
     outputs = selector.generate(**inputs, max_length=100, num_return_sequences=top_k, num_beams=top_k,
-                                do_sample=True)
-    step_texts = selector_tokenizer.batch_decode(outputs, skip_special_tokens=True)
-    samples = set()
+                                do_sample=True, return_dict_in_generate=True, output_scores=True)
 
-    for step_text in step_texts:
+    step_texts = selector_tokenizer.batch_decode(outputs.sequences, skip_special_tokens=True)
+    scores = outputs.sequences_scores
+    samples = []
+    sample_scores = []
+
+    for step_text, score in zip(step_texts, scores):
         step_ids = process_generated_steps(step_text)
         if len(step_ids) == 0:
             continue
-        samples.add(step_ids)
+        if step_ids not in samples:
+            samples.append(step_ids)
+            sample_scores.append(score)
 
     assert len(samples) > 0, "No valid steps were sampled"
-    #todo: calculate scores for each of the sampled steps
-    return list(samples), [1.0] * len(samples)
+    return samples, sample_scores
 
 
 def apply_deductor(deductor, deductor_tokenizer, search_state: SearchState, next_step: Set[str]) -> SearchState:
@@ -124,7 +133,7 @@ def apply_deductor(deductor, deductor_tokenizer, search_state: SearchState, next
         step_texts.append(search_state.context[step].strip())
 
     input_txt = prefix + " [AND] ".join(step_texts) + " [INFER]"
-    print(f"deductor input: {input_txt}")
+    # print(f"deductor input: {input_txt}")
     inputs = deductor_tokenizer(input_txt, return_tensors='pt')
     outputs = deductor.generate(**inputs, max_length=100, num_return_sequences=1, num_beams=5)
     generated_text = deductor_tokenizer.batch_decode(outputs, skip_special_tokens=True)[0]
@@ -136,15 +145,19 @@ def greedy_proof_search(example: Dict, deductor: PreTrainedModel, deductor_token
                  selector: PreTrainedModel, selector_tokenizer: PreTrainedTokenizer, n_iters: int = 6):
     search_state = SearchState(example)
     iterations = 0
+    print(search_state)
 
     while not search_state.has_reached_hypothesis() and iterations < n_iters:
-        pprint(f"step {iterations + 1}")
+        # pprint(f"step {iterations + 1}")
         next_steps, _ = sample_steps(selector, selector_tokenizer, search_state)
         next_step = next_steps[0]
-        print("Next step: ", next_step)
+        # print("Next step: ", next_step)
         search_state = apply_deductor(deductor, deductor_tokenizer, search_state, next_step)
-        pprint("Current proof step: " + search_state.proof_steps[-1])
+        # pprint("Current proof step: " + search_state.proof_steps[-1])
         iterations += 1
+
+    for proof_step in search_state.proof_steps:
+        pprint(proof_step)
 
 
 def pprint(txt: str):
@@ -182,7 +195,6 @@ def run(deductor_path: str, selector_path: str, test_data_path: str, ):
         print("*" * 50)
 
         input()
-
 
 if __name__ == '__main__':
     Fire(run)
