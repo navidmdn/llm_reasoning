@@ -24,6 +24,7 @@ class SearchState:
         self.proof_steps = []
 
         self.bleurt_tokenizer = AutoTokenizer.from_pretrained("Elron/bleurt-large-512", cache_dir=cache_dir)
+        self.bleurt_tokenizer = AutoTokenizer.from_pretrained("Elron/bleurt-large-512", cache_dir=cache_dir)
         self.bleurt_model = AutoModelForSequenceClassification.from_pretrained("Elron/bleurt-large-512", cache_dir=cache_dir)
         self.bleurt_model.eval()
 
@@ -65,6 +66,7 @@ class SearchState:
             inp = self.bleurt_tokenizer([self.hypothesis], [last_proof], return_tensors='pt')
             score = self.bleurt_model(**inp)[0].squeeze().item()
         # print("Bleurt score: ", score)
+
         return score > self.hypothesis_acceptance_threshold
 
     def add_proof_step(self, proof: str, step: Set[str]):
@@ -115,7 +117,7 @@ def process_generated_steps(generated_steps: str) -> FrozenSet[str]:
 
 
 def sample_steps(selector: PreTrainedModel, selector_tokenizer: PreTrainedTokenizer, search_state: SearchState,
-                 top_k: int = 5) ->\
+                 top_k: int = 20) ->\
         Tuple[List[FrozenSet[str]], List[float]]:
     """
     Sample the next steps to take in the proof search. It will return a list which each element is a list of
@@ -123,12 +125,13 @@ def sample_steps(selector: PreTrainedModel, selector_tokenizer: PreTrainedTokeni
     """
     input_txt = search_state.get_selection_prompt()
 
-    # print("selection prompt:")
-    # pprint(input_txt)
+    print("selection prompt:")
+    pprint(input_txt)
 
     inputs = selector_tokenizer(input_txt, return_tensors='pt')
     outputs = selector.generate(**inputs, max_length=100, num_return_sequences=top_k, num_beams=top_k,
-                                do_sample=True, return_dict_in_generate=True, output_scores=True)
+                                do_sample=False, return_dict_in_generate=True, output_scores=True,
+                                num_beam_groups=5, diversity_penalty=0.5)
 
     step_texts = selector_tokenizer.batch_decode(outputs.sequences, skip_special_tokens=True)
     scores = outputs.sequences_scores
@@ -142,6 +145,7 @@ def sample_steps(selector: PreTrainedModel, selector_tokenizer: PreTrainedTokeni
         if step_ids not in samples:
             samples.append(step_ids)
             sample_scores.append(score)
+            print(f"step: {step_text}, score: {score}")
 
     assert len(samples) > 0, "No valid steps were sampled"
     return samples, sample_scores
@@ -158,7 +162,7 @@ def apply_deductor(deductor, deductor_tokenizer, search_state: SearchState, next
         step_texts.append(search_state.context[step].strip())
 
     input_txt = prefix + " [AND] ".join(step_texts) + " [INFER]"
-    # print(f"deductor input: {input_txt}")
+    print(f"deductor input: {input_txt}")
     inputs = deductor_tokenizer(input_txt, return_tensors='pt')
     outputs = deductor.generate(**inputs, max_length=100, num_return_sequences=1, num_beams=5)
     generated_text = deductor_tokenizer.batch_decode(outputs, skip_special_tokens=True)[0]
@@ -171,19 +175,44 @@ def greedy_proof_search(example: Dict, deductor: PreTrainedModel, deductor_token
                  cache_dir=None, n_iters: int = 5) -> str:
     search_state = SearchState(example, cache_dir=cache_dir)
     iterations = 0
-    # print(search_state)
+    print(search_state)
     try:
         while not search_state.has_reached_hypothesis() and iterations < n_iters:
-            # pprint(f"step {iterations + 1}")
+            pprint(f"step {iterations + 1}")
             next_steps, _ = sample_steps(selector, selector_tokenizer, search_state)
             next_step = next_steps[0]
-            # print("Next step: ", next_step)
+            print("Next step: ", next_step)
             search_state = apply_deductor(deductor, deductor_tokenizer, search_state, next_step)
-            # pprint("Current proof step: " + search_state.proof_steps[-1])
+            pprint("Current proof step: " + search_state.proof_steps[-1])
             iterations += 1
 
-        # for proof_step in search_state.proof_steps:
-        #     pprint(proof_step)
+        for proof_step in search_state.proof_steps:
+            pprint(proof_step)
+    except Exception as e:
+        print("Failed to generate proof for this example!")
+        print(e)
+
+    return search_state.get_formatted_full_proof()
+
+def proof_beam_search(example: Dict, deductor: PreTrainedModel, deductor_tokenizer: PreTrainedTokenizer,
+                 selector: PreTrainedModel, selector_tokenizer: PreTrainedTokenizer,
+                 cache_dir=None, n_iters: int = 5) -> str:
+    initial_search_state = SearchState(example, cache_dir=cache_dir)
+    search_states = [initial_search_state]
+    iterations = 0
+
+    try:
+        for i in range(n_iters):
+            pending_states = [s for s in search_states if not s.has_reached_hypothesis()]
+            pprint(f"step {iterations + 1}")
+            next_steps, _ = sample_steps(selector, selector_tokenizer, search_state)
+            next_step = next_steps[0]
+            print("Next step: ", next_step)
+            search_state = apply_deductor(deductor, deductor_tokenizer, search_state, next_step)
+            pprint("Current proof step: " + search_state.proof_steps[-1])
+
+        for proof_step in search_state.proof_steps:
+            pprint(proof_step)
     except Exception as e:
         print("Failed to generate proof for this example!")
         print(e)
@@ -221,10 +250,11 @@ def run(deductor_path: str, selector_path: str, test_data_path: str, output_dir:
         proof = greedy_proof_search(example, deductor, deductor_tokenizer, selector, selector_tokenizer, cache_dir)
         results.append(proof)
 
-        # print("*" * 50)
-        # print("Ground truth proof:")
-        # print(example['proof'] if 'proof' in example else example['proofs'])
-        # print("*" * 50)
+        print("*" * 50)
+        print("Ground truth proof:")
+        print(example['proof'] if 'proof' in example else example['proofs'])
+        print("*" * 50)
+        input()
     os.makedirs(output_dir, exist_ok=True)
     output_file_name = test_data_path.split('/')[-1]
     with open(os.path.join(output_dir, output_file_name.replace('.jsonl', '.tsv')), 'w') as f:
@@ -233,3 +263,10 @@ def run(deductor_path: str, selector_path: str, test_data_path: str, output_dir:
 
 if __name__ == '__main__':
     Fire(run)
+
+# run(
+#     deductor_path='models/deductor-t5-large',
+#     selector_path='models/selector-flant5-large',
+#     test_data_path='data/test/proof-d3.jsonl',
+#     output_dir='results'
+# )
