@@ -317,7 +317,7 @@ def proof_beam_search(example: Dict, deductor: PreTrainedModel, deductor_tokeniz
                       selector: PreTrainedModel, selector_tokenizer: PreTrainedTokenizer,
                       bleurt_tokenizer: PreTrainedTokenizer,
                       bleurt_model: PreTrainedModel,
-                      n_iters: int = 5, n_search_beams: int = 2) -> str:
+                      n_iters: int = 6, n_search_beams: int = 2) -> str:
     initial_search_state = SearchState(example, bluert_model=bleurt_model, bluert_tokenizer=bleurt_tokenizer)
     active_beams = [initial_search_state]
     reached_hypothesis = []
@@ -365,11 +365,13 @@ def proof_beam_search(example: Dict, deductor: PreTrainedModel, deductor_tokeniz
         print("none of the beams reached the hypothesis")
         for beam in active_beams:
             pprint(beam.get_formatted_full_proof())
+        return active_beams[0].get_formatted_full_proof()
     else:
         # sort results by score:
         reached_hypothesis = sorted(reached_hypothesis, key=lambda x: -x.score)[:n_search_beams]
         for beam in reached_hypothesis:
             pprint(beam.get_formatted_full_proof())
+        return reached_hypothesis[0].get_formatted_full_proof()
 
 
 def duplicate_search_state(search_state: SearchState) -> SearchState:
@@ -431,14 +433,13 @@ def run(deductor_path: str, selector_path: str, test_data_path: str, output_dir:
         proof = proof_beam_search(example, deductor, deductor_tokenizer, selector, selector_tokenizer,
                                   bleurt_tokenizer, bleurt_model, n_search_beams=n_search_beams)
         results.append(proof)
-        input()
 
 
     os.makedirs(output_dir, exist_ok=True)
     output_file_name = test_data_path.split('/')[-1]
     with open(os.path.join(output_dir, output_file_name.replace('.jsonl', '.tsv')), 'w') as f:
         f.write("\n".join(results))
-
+[]
 
 if __name__ == '__main__':
     Fire(run)
