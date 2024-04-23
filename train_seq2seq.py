@@ -714,7 +714,7 @@ def main():
     training_args.generation_config = GenerationConfig(
         max_length=data_args.max_target_length,
         num_beams=num_beams,
-        do_sample=True,
+        do_sample=False,
         num_return_sequences=min(data_args.num_return_sequences, num_beams),
         decoder_start_token_id=config.decoder_start_token_id,
         eos_token_id=config.eos_token_id,
