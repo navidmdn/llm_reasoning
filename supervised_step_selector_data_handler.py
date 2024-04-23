@@ -65,7 +65,7 @@ def preprocess_ruletaker(base_path, split='dev'):
 
         dataset = load_jsonl(os.path.join(base_path, f'depth-{depth}', f'meta-{split}.jsonl'))
         for example in tqdm(dataset):
-            if example['depth'] is None or example['depth'] == 0:
+            if example['depth'] is None or example['depth'] == 0 or example['answer'] is False:
                 continue
             extracted_steps.extend(extract_ruletaker_steps(example))
 

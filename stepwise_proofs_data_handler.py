@@ -12,7 +12,7 @@ def load_jsonl(path):
         return [json.loads(line) for line in fp.readlines()]
 
 
-def extract_ruletaker_steps(example: Dict):
+def extract_ruletaker_steps(example: Dict, add_hypothesis=False):
 
     sents = example['context']
     sents = re.split(r'sent\d+:', sents)
@@ -40,12 +40,16 @@ def extract_ruletaker_steps(example: Dict):
             # conclusion = sents_d['hypothesis']
 
         premises = [sents_d[p.strip()] for p in premises.split('&')]
-        extracted_proof_steps.append((premises, conclusion))
+
+        if add_hypothesis:
+            extracted_proof_steps.append((premises, conclusion, sents_d['hypothesis']))
+        else:
+            extracted_proof_steps.append((premises, conclusion))
 
     return extracted_proof_steps
 
 
-def preprocess_ruletaker(base_path, split='dev'):
+def preprocess_ruletaker(base_path, split='dev', add_hypothesis=False):
 
     extracted_steps = []
     for depth in [1, 2, 3, 5]:
@@ -53,14 +57,14 @@ def preprocess_ruletaker(base_path, split='dev'):
 
         dataset = load_jsonl(os.path.join(base_path, f'depth-{depth}', f'meta-{split}.jsonl'))
         for example in tqdm(dataset):
-            if example['depth'] is None or example['depth'] == 0:
+            #todo: figure out a way to generalize to false answers
+            if example['depth'] is None or example['depth'] == 0 or example['answer'] is False:
                 continue
-            extracted_steps.extend(extract_ruletaker_steps(example))
-
+            extracted_steps.extend(extract_ruletaker_steps(example, add_hypothesis=add_hypothesis))
     return extracted_steps
 
 
-def extract_entailmenttree_steps(example: Dict):
+def extract_entailmenttree_steps(example: Dict, add_hypothesis=False):
 
     sents = example['context']
     sents = re.split(r'sent\d+:', sents)
@@ -86,12 +90,15 @@ def extract_entailmenttree_steps(example: Dict):
             conclusion = sents_d['hypothesis']
 
         premises = [sents_d[p.strip()] for p in premises.split('&')]
-        extracted_proof_steps.append((premises, conclusion))
+        if add_hypothesis:
+            extracted_proof_steps.append((premises, conclusion, sents_d['hypothesis']))
+        else:
+            extracted_proof_steps.append((premises, conclusion))
 
     return extracted_proof_steps
 
 
-def preprocess_entailmenttree(base_path, split='dev'):
+def preprocess_entailmenttree(base_path, split='dev', add_hypothesis=False):
 
     extracted_steps = []
     for task in ['task_1', 'task_2']:
@@ -101,7 +108,7 @@ def preprocess_entailmenttree(base_path, split='dev'):
         for example in tqdm(dataset):
             if example['depth_of_proof'] is None or example['depth_of_proof'] == 0:
                 continue
-            extracted_steps.extend(extract_entailmenttree_steps(example))
+            extracted_steps.extend(extract_entailmenttree_steps(example, add_hypothesis=add_hypothesis))
 
     return extracted_steps
 
@@ -110,8 +117,8 @@ def merge_entailmenttree_ruletaker(paths, output, split='train', merge_equal=Fal
     ds_list = []
     for path in paths:
         print("loading from ", path, "...")
-        train_path = os.path.join(path, f'{split}.json')
-        with open(train_path, 'r') as fp:
+        data_path = os.path.join(path, f'{split}.json')
+        with open(data_path, 'r') as fp:
             lines = fp.readlines()
             ds_list.append(lines)
 
@@ -130,35 +137,40 @@ def merge_entailmenttree_ruletaker(paths, output, split='train', merge_equal=Fal
 
 def main():
     parser = argparse.ArgumentParser()
-    # parser.add_argument('--input_path', type=str, default='data/proofwriter-dataset-V2020.12.3/preprocessed_OWA')
-    # parser.add_argument('--output_path', type=str, default='data/proofwriter-stepwise_proofs/')
+    parser.add_argument('--input_path', type=str, default='data/proofwriter-dataset-V2020.12.3/preprocessed_OWA')
+    parser.add_argument('--output_path', type=str, default='data/proofwriter-stepwise_proofs/')
     parser.add_argument('--dataset', type=str, default='ruletaker', choices=['entailmenttree', 'ruletaker'])
     parser.add_argument('--merge', nargs='+', default=None, help='a list of preprocessed dataset to merge')
     # parser.add_argument('--input_path', type=str, default='data/entailment_trees_emnlp2021_data_v3')
     # parser.add_argument('--output_path', type=str, default='data/entailmenttree-stepwise_proofs/')
-    parser.add_argument('--output_path', type=str, default='data/train_merged.jsonl')
+    # parser.add_argument('--output_path', type=str, default='data/train_merged.json')
     parser.add_argument('--merge-equal', action='store_true', help='merge equal number of examples from each dataset')
+    parser.add_argument('--add_hypothesis', action='store_true', help='adds hypothesis to the context of deduction')
+    parser.add_argument('--split', type=str, default=None)
     args = parser.parse_args()
 
     if args.merge is not None:
-        merge_entailmenttree_ruletaker(args.merge, args.output_path, split='train', merge_equal=args.merge_equal)
+        merge_entailmenttree_ruletaker(args.merge, args.output_path, split=args.split, merge_equal=args.merge_equal)
         return
 
     os.makedirs(args.output_path, exist_ok=True)
     for split in ['dev', 'test', 'train']:
         if args.dataset == 'entailmenttree':
-            extracted_steps = preprocess_entailmenttree(args.input_path, split)
+            extracted_steps = preprocess_entailmenttree(args.input_path, split, add_hypothesis=args.add_hypothesis)
         elif args.dataset == 'ruletaker':
-            extracted_steps = preprocess_ruletaker(args.input_path, split)
+            extracted_steps = preprocess_ruletaker(args.input_path, split, add_hypothesis=args.add_hypothesis)
         else:
             raise NotImplementedError()
         if split == 'train':
             np.random.shuffle(extracted_steps)
 
         print("writing to file...")
-        with open(os.path.join(args.output_path, f'{split}.jsonl'), 'w') as fp:
+        with open(os.path.join(args.output_path, f'{split}.json'), 'w') as fp:
             for step in extracted_steps:
-                premises = ' [AND] '.join(step[0])
+                premises = ""
+                if args.add_hypothesis:
+                    premises = f'hypothesis: {step[2]}\n'
+                premises = premises + ' [AND] '.join(step[0])
                 premises = premises + ' [INFER]'
                 conclusion = step[1]
                 fp.write(json.dumps({'premises': premises, 'conclusion': conclusion}) + '\n')
