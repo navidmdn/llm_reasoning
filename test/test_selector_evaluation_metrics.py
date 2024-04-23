@@ -2,7 +2,7 @@ import pytest
 from typing import List, Dict
 
 # Assuming the function to be tested is in a file named 'metrics.py'
-from evaluate_selector import permutation_invariant_metrics, has_correct_format
+from select_and_deduct.evaluate_selector import permutation_invariant_metrics, has_correct_format
 
 
 def _permutation_invariant_match(pred: str, target: str) -> bool:
