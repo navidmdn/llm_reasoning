@@ -27,18 +27,19 @@ def respond_to_batch(
 ) -> torch.LongTensor:
     """Sample text from language model."""
     input_ids = queries
+    decoder_input_ids = torch.LongTensor([[0] for _ in range(input_ids.shape[0])]).to(input_ids.device)
+
     for _i in range(txt_len):
         # Get Logits
         #todo: do i need to pass decoder input ids?
-        # decoder_input_ids = torch.LongTensor([[0] for _ in range(input_ids.shape[0])]).to(input_ids.device)
-        outputs = model(input_ids=input_ids, labels=targets)
+        outputs = model(input_ids=input_ids, decoder_input_ids=decoder_input_ids)
         next_token_logits = outputs[0][:, -1, :]
         next_token_logits = top_k_top_p_filtering(next_token_logits, top_k=top_k, top_p=top_p)
         # Sample
         probs = F.softmax(next_token_logits, dim=-1)
         next_token = torch.multinomial(probs, num_samples=1).squeeze(1)
-        input_ids = torch.cat([input_ids, next_token.unsqueeze(-1)], dim=-1)
-    return input_ids[:, -txt_len:]
+        decoder_input_ids = torch.cat([decoder_input_ids, next_token.unsqueeze(-1)], dim=-1)
+    return decoder_input_ids[:, -txt_len:]
 
 
 def run(model_name: str, train_path: str, batch_size: int = 2, n_iters: int = 100):
@@ -70,7 +71,8 @@ def run(model_name: str, train_path: str, batch_size: int = 2, n_iters: int = 10
 
         # get model response
         response_tensor = respond_to_batch(model, query_tensor, target_ids)
-        response_texts = tokenizer.batch_decode(response_tensor, skip_special_tokens=True)
+        response_texts = tokenizer.batch_decode(response_tensor, skip_special_tokens=False)
+        # todo: stop at eos for each example
 
         rewards = get_reward(response_texts, targets)
 
