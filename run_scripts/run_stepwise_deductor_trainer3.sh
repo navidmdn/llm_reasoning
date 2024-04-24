@@ -1,18 +1,18 @@
-WANDB_MODE=online WANDB_ENTITY=navidmdn WANDB_PROJECT=deductor python train_seq2seq.py\
+WANDB_MODE=online WANDB_ENTITY=navidmdn WANDB_PROJECT=deductor python ../select_and_deduct/train_seq2seq.py\
   --model_name_or_path google/flan-t5-large\
   --do_train\
   --do_eval\
-  --cache_dir ../hfcache\
-  --train_file data/train_merged.json\
-  --validation_file data/dev_merged.json\
-  --source_prefix "given premises perform a deduction step: "\
-  --output_dir outputs/deductor-flant5-large\
+  --cache_dir ../../hfcache\
+  --train_file ../data/deductor_train_merged.json\
+  --validation_file ../data/deductor_dev_merged.json\
+  --source_prefix "given premises perform an induction step: "\
+  --output_dir ../outputs/deductor-withhyp-flant5-large\
   --per_device_train_batch_size 8\
   --per_device_eval_batch_size 16\
   --gradient_accumulation_steps 4\
   --num_train_epochs 10\
   --save_strategy steps\
-  --save_total_limit 2\
+  --save_total_limit 1\
   --metric_for_best_model eval_loss\
   --evaluation_strategy steps\
   --eval_steps 50\

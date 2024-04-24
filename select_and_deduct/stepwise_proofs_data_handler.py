@@ -169,7 +169,7 @@ def main():
             for step in extracted_steps:
                 premises = ""
                 if args.add_hypothesis:
-                    premises = f'hypothesis: {step[2]}\n'
+                    premises = f'hypothesis: {step[2]}\ninduction:\n'
                 premises = premises + ' [AND] '.join(step[0])
                 premises = premises + ' [INFER]'
                 conclusion = step[1]

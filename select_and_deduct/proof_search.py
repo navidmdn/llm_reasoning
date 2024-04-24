@@ -27,7 +27,6 @@ class SearchState:
 
         self.intermediates = OrderedDict()
         self.proof_steps = []
-        self.hypothesis_acceptance_threshold = 0.8
         self.bleurt_model = bluert_model
         self.bleurt_tokenizer = bluert_tokenizer
         self.score = 0
@@ -60,7 +59,7 @@ class SearchState:
         self.context = self.process_identified_context(example['context'])
         self.hypothesis = example['hypothesis']
 
-    def has_reached_hypothesis(self) -> bool:
+    def has_reached_hypothesis(self, threshold=0.8) -> bool:
         last_proof = self.get_last_proof()
         if last_proof is None:
             return False
@@ -69,7 +68,7 @@ class SearchState:
             score = self.bleurt_model(**inp)[0].squeeze().item()
         # print("Bleurt score: ", score)
 
-        return score > self.hypothesis_acceptance_threshold
+        return score > threshold
 
     def add_proof_step(self, proof: str, step: FrozenSet[str], score: float):
         next_int_id = self.num_inferred_nodes + 1
@@ -91,7 +90,12 @@ class SearchState:
         prefix = "infere: "
         step_texts = []
         for step in next_step:
-            step_texts.append(self.context[step].strip())
+            try:
+                step_texts.append(self.context[step].strip())
+            except KeyError as e:
+                raise KeyError(f"Step {step} not found in context")
+        if len(step_texts) == 0:
+            raise ValueError("No steps were given to deduce")
 
         input_txt = prefix + " [AND] ".join(step_texts) + " [INFER]"
         return input_txt
@@ -182,7 +186,8 @@ def batch_apply_deductor(deductor, deductor_tokenizer, search_states: List[Searc
         valid_search_states.append(s)
         valid_scores.append(score)
     if len(input_txts) == 0:
-        raise Exception("No valid deduction prompts were generated")
+        print("No valid deduction prompts were generated")
+        return search_states
 
     generated_texts, _ = batched_generate(input_txts, deductor, deductor_tokenizer, max_length=100, num_return_sequences=1,
                                        num_beams=num_beams)
@@ -300,7 +305,7 @@ def batch_sample_steps(selector: PreTrainedModel, selector_tokenizer: PreTrained
 
 
 def batch_test_if_hypothesis_reached(search_states: List[SearchState], bleurt_tokenizer: PreTrainedTokenizer,
-                                     bleurt_model: PreTrainedModel, threshold: float = 0.6) -> List[bool]:
+                                     bleurt_model: PreTrainedModel, threshold: float = 0.6) -> Tuple[List[bool], List[float]]:
     last_proofs = [s.get_last_proof() for s in search_states]
     valid_proof_indices = [i for i, proof in enumerate(last_proofs) if proof is not None]
     valid_last_proofs = [last_proofs[i] for i in valid_proof_indices]
@@ -309,36 +314,37 @@ def batch_test_if_hypothesis_reached(search_states: List[SearchState], bleurt_to
 
     result = [False] * len(search_states)
     if len(valid_last_proofs) == 0:
-        return result
+        return result, [0.0]*len(search_states)
 
     with torch.no_grad():
         inp = bleurt_tokenizer(hypotheses, valid_last_proofs, return_tensors='pt', padding='longest', truncation=True)
         scores = bleurt_model(**inp)[0].squeeze().tolist()
         if isinstance(scores, float):
             scores = [scores]
-    print("BLEURT scores: ", scores)
+    # print("BLEURT scores: ", scores)
     reached = [score > threshold for score in scores]
     for i, r in zip(valid_proof_indices, reached):
         result[i] = r
-    return result
+    return result, scores
 
 
 def proof_beam_search(example: Dict, deductor: PreTrainedModel, deductor_tokenizer: PreTrainedTokenizer,
                       selector: PreTrainedModel, selector_tokenizer: PreTrainedTokenizer,
                       bleurt_tokenizer: PreTrainedTokenizer,
                       bleurt_model: PreTrainedModel,
-                      n_iters: int = 6, n_search_beams: int = 2) -> str:
+                      n_iters: int = 6, n_search_beams: int = 2, hypothesis_acceptance_threshold: float = 0.6) -> str:
     initial_search_state = SearchState(example, bluert_model=bleurt_model, bluert_tokenizer=bleurt_tokenizer)
     active_beams = [initial_search_state]
     reached_hypothesis = []
     print(initial_search_state)
     try:
         for i in range(n_iters):
-            reached = batch_test_if_hypothesis_reached(active_beams, bleurt_tokenizer, bleurt_model)
+            reached, hyp_scores = batch_test_if_hypothesis_reached(active_beams, bleurt_tokenizer, bleurt_model,
+                                                                   threshold=hypothesis_acceptance_threshold)
             to_terminate = []
-            for r, beam in zip(reached, active_beams):
+            for r, hscore, beam in zip(reached, hyp_scores, active_beams):
                 if r:
-                    reached_hypothesis.append(beam)
+                    reached_hypothesis.append((beam, hscore))
                     to_terminate.append(beam)
             for beam in to_terminate:
                 active_beams.remove(beam)
@@ -378,7 +384,11 @@ def proof_beam_search(example: Dict, deductor: PreTrainedModel, deductor_tokeniz
         return active_beams[0].get_formatted_full_proof()
     else:
         # sort results by score:
-        reached_hypothesis = sorted(reached_hypothesis, key=lambda x: -x.score)[:n_search_beams]
+        # reached_hypothesis = sorted(reached_hypothesis, key=lambda x: -x.score)[:n_search_beams]
+        # sort results by how close they are to the hypothesis
+        reached_hypothesis = sorted(reached_hypothesis, key=lambda x: -x[1])[:n_search_beams]
+        reached_hypothesis = [x[0] for x in reached_hypothesis]
+
         for beam in reached_hypothesis:
             pprint(beam.get_formatted_full_proof())
         return reached_hypothesis[0].get_formatted_full_proof()
@@ -389,18 +399,20 @@ def early_selection_weighted_search(example: Dict, deductor: PreTrainedModel, de
                       selector: PreTrainedModel, selector_tokenizer: PreTrainedTokenizer,
                       bleurt_tokenizer: PreTrainedTokenizer,
                       bleurt_model: PreTrainedModel,
-                      n_iters: int = 6, n_search_beams: int = 2) -> str:
+                      n_iters: int = 6, n_search_beams: int = 2, hypothesis_acceptance_threshold: float = 0.6) -> str:
     initial_search_state = SearchState(example, bluert_model=bleurt_model, bluert_tokenizer=bleurt_tokenizer)
+
     active_beams = [initial_search_state]
     reached_hypothesis = []
     print(initial_search_state)
     try:
         for i in range(n_iters):
-            reached = batch_test_if_hypothesis_reached(active_beams, bleurt_tokenizer, bleurt_model)
+            reached, hyp_scores = batch_test_if_hypothesis_reached(active_beams, bleurt_tokenizer, bleurt_model,
+                                                                   threshold=hypothesis_acceptance_threshold)
             to_terminate = []
-            for r, beam in zip(reached, active_beams):
+            for r, hscore, beam in zip(reached, hyp_scores, active_beams):
                 if r:
-                    reached_hypothesis.append(beam)
+                    reached_hypothesis.append((beam, hscore))
                     to_terminate.append(beam)
             for beam in to_terminate:
                 active_beams.remove(beam)
@@ -424,7 +436,7 @@ def early_selection_weighted_search(example: Dict, deductor: PreTrainedModel, de
             active_beams = [duplicate_search_state(active_beams[beam_id]) for beam_id, _, _ in flattened_outputs]
             next_steps = [o[1] for o in flattened_outputs]
             scores = [o[2] for o in flattened_outputs]
-            print(list(zip(next_steps, scores)))
+            # print(list(zip(next_steps, scores)))
             active_beams = batch_apply_deductor(deductor, deductor_tokenizer, search_states=active_beams,
                                                 next_steps=next_steps, scores=scores)
 
@@ -442,7 +454,11 @@ def early_selection_weighted_search(example: Dict, deductor: PreTrainedModel, de
         return active_beams[0].get_formatted_full_proof()
     else:
         # sort results by score:
-        reached_hypothesis = sorted(reached_hypothesis, key=lambda x: -x.score)[:n_search_beams]
+        # reached_hypothesis = sorted(reached_hypothesis, key=lambda x: -x.score)[:n_search_beams]
+        # sort results by how close they are to the hypothesis
+        reached_hypothesis = sorted(reached_hypothesis, key=lambda x: -x[1])[:n_search_beams]
+        reached_hypothesis = [x[0] for x in reached_hypothesis]
+
         for beam in reached_hypothesis:
             pprint(beam.get_formatted_full_proof())
         return reached_hypothesis[0].get_formatted_full_proof()
@@ -455,7 +471,6 @@ def duplicate_search_state(search_state: SearchState) -> SearchState:
     new_search_state.intermediates = deepcopy(search_state.intermediates)
     new_search_state.proof_steps = deepcopy(search_state.proof_steps)
     new_search_state.hypothesis = search_state.hypothesis
-    new_search_state.hypothesis_acceptance_threshold = search_state.hypothesis_acceptance_threshold
     new_search_state.score = search_state.score
     return new_search_state
 
@@ -478,7 +493,7 @@ def load_model_and_tokenizer(model_name: str, cache_dir=None):
 
 
 def run(deductor_path: str, selector_path: str, test_data_path: str, output_dir: str, cache_dir=None,
-        n_search_beams=1):
+        n_search_beams=1, hypothesis_acceptance_threshold=0.6):
     deductor, deductor_tokenizer = load_model_and_tokenizer(deductor_path, cache_dir=cache_dir)
     deductor.eval()
     selector, selector_tokenizer = load_model_and_tokenizer(selector_path, cache_dir=cache_dir)
@@ -490,7 +505,7 @@ def run(deductor_path: str, selector_path: str, test_data_path: str, output_dir:
     bleurt_model.eval()
 
     examples = load_examples(test_data_path)
-    np.random.shuffle(examples)
+    # np.random.shuffle(examples)
 
     results = []
     for example in tqdm(examples):
