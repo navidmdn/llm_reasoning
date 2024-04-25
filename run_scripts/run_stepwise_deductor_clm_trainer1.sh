@@ -14,9 +14,11 @@
 #    --lora_r=64 \
 #    --lora_alpha=16
 
-PYTHONPATH=.. python ../select_and_deduct/train_clm_sft.py\
- --train_file ../data/deductor_train_clm.json\
- --dev_file ../data/deductor_dev_clm.json\
- --output_dir ../outputs/test_clm/\
- --model_id meta-llama/Llama-2-7b-chat-hf\
- --cache_dir ../../hfcache/
+WANDB_MODE=offline WANDB_ENTITY=navidmdn WANDB_PROJECT=deductor-clm PYTHONPATH=.. python ../select_and_deduct/train_clm_sft.py\
+  --train_file ../data/deductor_train_clm.json\
+  --dev_file ../data/deductor_dev_clm.json\
+  --output_dir ../outputs/test_clm/\
+  --model_id meta-llama/Llama-2-7b-chat-hf\
+  --cache_dir ../../hfcache/\
+  --use_peft\
+  --load_in_4bit

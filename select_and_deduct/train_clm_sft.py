@@ -122,12 +122,13 @@ def training_function(script_args, training_args):
             print(train_dataset[index]["text"])
 
     # Model
-    if 'llama-3' in script_args.model_id.lower():
+    if 'llama' in script_args.model_id.lower():
+        #todo: checkout official example code for correct dtype
         print("Using llama 3 recommended data type")
         torch_dtype = torch.bfloat16
         quant_storage_dtype = torch.bfloat16
     else:
-        torch_dtype = "auto"
+        torch_dtype = None
         quant_storage_dtype = None
 
     quantization_config = None
