@@ -87,7 +87,7 @@ class SearchState:
         return f"{prefix}{context}"
 
     def get_deduction_prompt(self, next_step: FrozenSet[str]) -> str:
-        prefix = "infere: "
+        prefix = "given premises perform an induction step:\n"
         step_texts = []
         for step in next_step:
             try:

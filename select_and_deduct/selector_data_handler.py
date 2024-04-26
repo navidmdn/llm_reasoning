@@ -172,7 +172,7 @@ def main():
             np.random.shuffle(extracted_examples)
 
         print("writing to file...")
-        with open(os.path.join(args.output_path, f'{split}.jsonl'), 'w') as fp:
+        with open(os.path.join(args.output_path, f'{split}.json'), 'w') as fp:
             for ex in extracted_examples:
                 fp.write(json.dumps({'premises': ex[0], 'steps': ex[1]}) + '\n')
 

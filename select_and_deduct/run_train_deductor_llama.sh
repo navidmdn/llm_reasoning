@@ -14,7 +14,7 @@
 #    --lora_r=64 \
 #    --lora_alpha=16
 
-WANDB_MODE=offline WANDB_ENTITY=navidmdn WANDB_PROJECT=deductor-clm PYTHONPATH=.. python ../select_and_deduct/train_clm_sft.py\
+WANDB_MODE=offline WANDB_ENTITY=navidmdn WANDB_PROJECT=deductor-clm PYTHONPATH=.. python train_clm_sft.py\
   --train_file ../data/deductor_train_clm.json\
   --dev_file ../data/deductor_dev_clm.json\
   --output_dir ../outputs/test_clm/\
