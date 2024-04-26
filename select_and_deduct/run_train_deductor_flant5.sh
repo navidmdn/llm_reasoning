@@ -11,6 +11,7 @@ WANDB_MODE=online WANDB_ENTITY=navidmdn WANDB_PROJECT=deductor python train_seq2
   --per_device_eval_batch_size 16\
   --gradient_accumulation_steps 4\
   --num_train_epochs 10\
+  --max_target_length 256\
   --save_strategy steps\
   --save_total_limit 1\
   --metric_for_best_model eval_loss\

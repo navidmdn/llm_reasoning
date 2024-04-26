@@ -28,6 +28,12 @@ def _permutation_invariant_match(pred: str, target: str) -> bool:
             4,
             {'top1_acc': 0.0, 'top4_acc': 1.0, 'diversity': 0.75}
     ),
+    (
+            ['int2sent & sent2', 'sent4', 'sent4', 'sent6'],
+            ['sent6'],
+            4,
+            {'top1_acc': 0.0, 'top4_acc': 1.0, 'diversity': 0.5}
+    ),
 ])
 def test_permutation_invariant_metrics(preds: List[str], targets: List[str], num_pred_seq: int, expected: Dict[str, float]):
     out = permutation_invariant_metrics(preds, targets, num_pred_seq)
@@ -51,8 +57,8 @@ def test_incorrect_use_of_ampersand():
     assert not has_correct_format("int1& sent2")
 
 def test_single_valid_patterns():
-    assert not has_correct_format("int1")
-    assert not has_correct_format("sent10")
+    assert has_correct_format("int1")
+    assert has_correct_format("sent10")
 
 def test_empty_string():
     assert not has_correct_format("")

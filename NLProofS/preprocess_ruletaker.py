@@ -137,7 +137,7 @@ def main() -> None:
                     answer = question["answer"]
                     q = normalize_sentence(question["question"])
 
-                    if split == "train":
+                    if split in ["train", "dev"]:
                         if answer == "Unknown":
                             # Discard training examples that are neither provable nor unprovable.
                             continue

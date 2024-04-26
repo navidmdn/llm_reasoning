@@ -12,6 +12,28 @@ def load_jsonl(path):
         return [json.loads(line) for line in fp.readlines()]
 
 
+def extract_proof_steps(context: Dict[str, str], proof_strs: List[str], add_hypothesis=False) -> List[Tuple]:
+    extracted_proof_steps = []
+    for proof in proof_strs:
+        premises, conclusion = proof.split('->')
+        conclusion = conclusion.strip()
+        match = re.findall(r'^(int\d+):', conclusion)
+        if match:
+            match = match[0].strip()
+            conclusion = re.sub(r'^int\d+:', '', conclusion).strip()
+            context[match] = conclusion
+        elif conclusion == 'hypothesis':
+            conclusion = context['hypothesis']
+
+        premises = [context[p.strip()] for p in premises.split('&')]
+
+        if add_hypothesis:
+            extracted_proof_steps.append((premises, conclusion, context['hypothesis']))
+        else:
+            extracted_proof_steps.append((premises, conclusion))
+
+    return extracted_proof_steps
+
 def extract_ruletaker_steps(example: Dict, add_hypothesis=False):
 
     sents = example['context']
@@ -23,30 +45,9 @@ def extract_ruletaker_steps(example: Dict, add_hypothesis=False):
 
     #todo: check if number of proofs for examples
     proofs = example['proofs'][0]
-    proofs = [p.strip() for p in proofs.split(';') if len(p) > 0]
+    proofs = [p.strip() for p in proofs.split(';') if len(p.strip()) > 0]
 
-    extracted_proof_steps = []
-    for proof in proofs:
-        premises, conclusion = proof.split('->')
-        conclusion = conclusion.strip()
-        match = re.findall(r'^(int\d+):', conclusion)
-        if match:
-            match = match[0].strip()
-            conclusion = re.sub(r'^int\d+:', '', conclusion).strip()
-            sents_d[match] = conclusion
-        elif conclusion == 'hypothesis':
-            #todo: avoiding negatiion hypothesises
-            continue
-            # conclusion = sents_d['hypothesis']
-
-        premises = [sents_d[p.strip()] for p in premises.split('&')]
-
-        if add_hypothesis:
-            extracted_proof_steps.append((premises, conclusion, sents_d['hypothesis']))
-        else:
-            extracted_proof_steps.append((premises, conclusion))
-
-    return extracted_proof_steps
+    return extract_proof_steps(sents_d, proofs, add_hypothesis=add_hypothesis)
 
 
 def preprocess_ruletaker(base_path, split='dev', add_hypothesis=False):
@@ -57,8 +58,10 @@ def preprocess_ruletaker(base_path, split='dev', add_hypothesis=False):
 
         dataset = load_jsonl(os.path.join(base_path, f'depth-{depth}', f'meta-{split}.jsonl'))
         for example in tqdm(dataset):
-            #todo: figure out a way to generalize to false answers
-            if example['depth'] is None or example['depth'] == 0 or example['answer'] is False:
+            #todo: false answers are mitigated by adding "i don't think" prefix
+            if example['depth'] == 0:
+                continue
+            if split == 'test' and example['depth'] is None:
                 continue
             extracted_steps.extend(extract_ruletaker_steps(example, add_hypothesis=add_hypothesis))
     return extracted_steps
@@ -73,29 +76,10 @@ def extract_entailmenttree_steps(example: Dict, add_hypothesis=False):
     for i, s in enumerate(sents):
         sents_d[f'sent{i+1}'] = s
 
-    #todo: check if number of proofs for examples
     proofs = example['proof']
-    proofs = [p.strip() for p in proofs.split(';')][:-1]
+    proofs = [p.strip() for p in proofs.split(';') if len(p.strip()) > 0]
 
-    extracted_proof_steps = []
-    for proof in proofs:
-        premises, conclusion = proof.split('->')
-        conclusion = conclusion.strip()
-        match = re.findall(r'^(int\d+):', conclusion)
-        if match:
-            match = match[0].strip()
-            conclusion = re.sub(r'^int\d+:', '', conclusion).strip()
-            sents_d[match] = conclusion
-        elif conclusion == 'hypothesis':
-            conclusion = sents_d['hypothesis']
-
-        premises = [sents_d[p.strip()] for p in premises.split('&')]
-        if add_hypothesis:
-            extracted_proof_steps.append((premises, conclusion, sents_d['hypothesis']))
-        else:
-            extracted_proof_steps.append((premises, conclusion))
-
-    return extracted_proof_steps
+    return extract_proof_steps(sents_d, proofs, add_hypothesis=add_hypothesis)
 
 
 def preprocess_entailmenttree(base_path, split='dev', add_hypothesis=False):
@@ -106,6 +90,7 @@ def preprocess_entailmenttree(base_path, split='dev', add_hypothesis=False):
 
         dataset = load_jsonl(os.path.join(base_path, f'dataset/{task}', f'{split}.jsonl'))
         for example in tqdm(dataset):
+            # there are no deductions for depth 0
             if example['depth_of_proof'] is None or example['depth_of_proof'] == 0:
                 continue
             extracted_steps.extend(extract_entailmenttree_steps(example, add_hypothesis=add_hypothesis))

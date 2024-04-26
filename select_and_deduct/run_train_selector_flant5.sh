@@ -1,22 +1,22 @@
 #using a regular seq2seq trainer
 WANDB_MODE=online WANDB_ENTITY=navidmdn WANDB_PROJECT=selector python train_seq2seq.py\
-  --model_name_or_path t5-large\
+  --model_name_or_path google/flan-t5-large\
   --text_column premises\
   --summary_column steps\
-  --cache_dir ../hfcache\
+  --cache_dir ../../hfcache\
   --do_train\
   --do_eval\
-  --train_file data/selector_train_merged.json\
-  --validation_file data/selector_dev_merged.json\
-  --source_prefix "select steps: "\
-  --output_dir outputs/selector-t5-large-v2\
+  --train_file ../data/selector_train_merged.json\
+  --validation_file ../data/selector_dev_merged.json\
+  --source_prefix "select the best steps for induction in forward reasoning from the following premises:\n"\
+  --output_dir ../outputs/selector-flant5-large\
   --per_device_train_batch_size 8\
   --per_device_eval_batch_size 16\
   --gradient_accumulation_steps 4\
   --num_train_epochs 10\
   --save_strategy steps\
-  --save_total_limit 2\
-  --metric_for_best_model eval_loss\
+  --save_total_limit 1\
+  --metric_for_best_model eval_top5_acc\
   --evaluation_strategy steps\
   --eval_steps 50\
   --save_steps 50\
@@ -26,7 +26,7 @@ WANDB_MODE=online WANDB_ENTITY=navidmdn WANDB_PROJECT=selector python train_seq2
   --report_to wandb\
   --load_best_model_at_end\
   --generation_max_length 20\
-  --val_max_target_length 20\
+  --max_target_length 20\
   --eval_accumulation_steps 1\
   --num_beams 5\
   --num_return_sequences 5

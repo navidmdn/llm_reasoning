@@ -7,15 +7,18 @@ import re
 
 
 def has_correct_format(pred: str) -> bool:
-    if ' & ' not in pred:
-        return False
-    pred = pred.split(' & ')
-    pred = [p.strip() for p in pred]
+    if ' & ' in pred:
+        pred = pred.split(' & ')
+        pred = [p.strip() for p in pred]
 
-    for p in pred:
-        if not re.match(r'^int\d+$', p) and not re.match(r'^sent\d+$', p):
-            return False
-    return True
+        for p in pred:
+            if not re.match(r'^int\d+$', p) and not re.match(r'^sent\d+$', p):
+                return False
+        return True
+    # this is the case that the model thinks the hypothesis is in the context:
+    elif re.match(r'^int\d+$', pred.strip()) or re.match(r'^sent\d+$', pred.strip()):
+        return True
+    return False
 
 def _permutation_invariant_match(pred: str, target: str) -> bool:
     if not has_correct_format(pred):

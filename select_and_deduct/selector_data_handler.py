@@ -26,36 +26,61 @@ def stringify_example(context: Dict, selected_steps: List, hypothesis: str, rand
     selected_steps_str = " & ".join(selected_steps)
     return f"premises:\n{context_str}hypothesis:\n{hypothesis}\nproof steps: ", selected_steps_str
 
+def extract_selection_steps(context: Dict[str, str], proof_strs: List[str], hypothesis: str) -> List[Tuple]:
+    results = []
+    last_int_id = 0
+
+    for proof in proof_strs:
+        premises, conclusion = proof.split('->')
+        premises = [p.strip() for p in premises.split('&')]
+        conclusion = conclusion.strip()
+
+        results.append(stringify_example(context, premises, hypothesis, randomize_ids=True))
+
+        match = re.findall(r'^(int\d+):', conclusion)
+        if match:
+            match = match[0].strip()
+            last_int_id = int(match.replace('int', '').strip())
+            conclusion = re.sub(r'^int\d+:', '', conclusion).strip()
+            context[match] = conclusion
+        elif conclusion == 'hypothesis':
+            context[f'int{last_int_id + 1}'] = hypothesis
+        else:
+            raise Exception("Invalid conclusion")
+
+    return results
+
 
 def extract_ruletaker_steps(example: Dict):
-    results = []
 
     sents = example['context']
     sents = re.split(r'sent\d+:', sents)
     sents = [s.strip() for s in sents if len(s) > 0]
     sents_d = {}
+    hypothesis = example['hypothesis']
     for i, s in enumerate(sents):
         sents_d[f'sent{i+1}'] = s
 
-    #todo: check if number of proofs for examples
     proofs = example['proofs'][0]
-    proofs = [p.strip() for p in proofs.split(';') if len(p) > 0]
+    proofs = [p.strip() for p in proofs.split(';') if len(p.strip()) > 0]
 
-    for proof in proofs:
-        premises, conclusion = proof.split('->')
-        premises = [p.strip() for p in premises.split('&')]
-        conclusion = conclusion.strip()
+    return extract_selection_steps(sents_d, proofs, hypothesis)
 
-        results.append(stringify_example(sents_d, premises, example['hypothesis'], randomize_ids=True))
 
-        match = re.findall(r'^(int\d+):', conclusion)
-        if match:
-            match = match[0].strip()
-            conclusion = re.sub(r'^int\d+:', '', conclusion).strip()
-            sents_d[match] = conclusion
+def extract_entailmenttree_steps(example: Dict):
 
-    return results
+    sents = example['context']
+    sents = re.split(r'sent\d+:', sents)
+    sents = [s.strip() for s in sents if len(s) > 0]
+    hypothesis = example['hypothesis']
+    sents_d = {}
+    for i, s in enumerate(sents):
+        sents_d[f'sent{i+1}'] = s
 
+    proofs = example['proof']
+    proofs = [p.strip() for p in proofs.split(';') if len(p.strip()) > 0]
+
+    return extract_selection_steps(sents_d, proofs, hypothesis)
 
 def preprocess_ruletaker(base_path, split='dev'):
 
@@ -65,45 +90,11 @@ def preprocess_ruletaker(base_path, split='dev'):
 
         dataset = load_jsonl(os.path.join(base_path, f'depth-{depth}', f'meta-{split}.jsonl'))
         for example in tqdm(dataset):
-            if example['depth'] is None or example['depth'] == 0 or example['answer'] is False:
+            if split == 'test' and example['depth'] is None:
                 continue
             extracted_steps.extend(extract_ruletaker_steps(example))
 
     return extracted_steps
-
-
-def extract_entailmenttree_steps(example: Dict):
-
-    results = []
-    sents = example['context']
-    sents = re.split(r'sent\d+:', sents)
-    sents = [s.strip() for s in sents if len(s) > 0]
-    sents_d = {}
-    for i, s in enumerate(sents):
-        sents_d[f'sent{i+1}'] = s
-
-    #todo: check if number of proofs for examples
-    proofs = example['proof']
-    proofs = [p.strip() for p in proofs.split(';')][:-1]
-
-    for proof in proofs:
-        premises, conclusion = proof.split('->')
-        premises = [p.strip() for p in premises.split('&')]
-        conclusion = conclusion.strip()
-
-        results.append(stringify_example(sents_d, premises, example['hypothesis'], randomize_ids=True))
-
-        match = re.findall(r'^(int\d+):', conclusion)
-        if match:
-            match = match[0].strip()
-            conclusion = re.sub(r'^int\d+:', '', conclusion).strip()
-            sents_d[match] = conclusion
-        elif conclusion == 'hypothesis':
-            continue
-        else:
-            raise Exception("Invalid conclusion")
-
-    return results
 
 def preprocess_entailmenttree(base_path, split='dev'):
 
@@ -113,8 +104,6 @@ def preprocess_entailmenttree(base_path, split='dev'):
 
         dataset = load_jsonl(os.path.join(base_path, f'dataset/{task}', f'{split}.jsonl'))
         for example in tqdm(dataset):
-            if example['depth_of_proof'] is None or example['depth_of_proof'] == 0:
-                continue
             extracted_steps.extend(extract_entailmenttree_steps(example))
 
     return extracted_steps
@@ -125,7 +114,7 @@ def merge_entailmenttree_ruletaker(paths, output, split='train', merge_equal=Fal
     ds_list = []
     for path in paths:
         print("loading from ", path, "...")
-        train_path = os.path.join(path, f'{split}.jsonl')
+        train_path = os.path.join(path, f'{split}.json')
         with open(train_path, 'r') as fp:
             lines = fp.readlines()
             ds_list.append(lines)
