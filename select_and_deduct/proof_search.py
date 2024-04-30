@@ -86,9 +86,16 @@ class SearchState:
         context = f"premises:\n{premises}\nhypothesis:\n{self.hypothesis}\nproof steps: "
         return f"{prefix}{context}"
 
-    def get_deduction_prompt(self, next_step: FrozenSet[str]) -> str:
-        prefix = "given premises perform an induction step:\n"
+    def get_deduction_prompt(self, next_step: FrozenSet[str], deductor_add_hyp=False) -> str:
+        instruction = "given premises perform an induction step:\n"
+
+        if deductor_add_hyp:
+            prefix = f"{instruction}hypothesis: {self.hypothesis}\ninduction:\n"
+        else:
+            prefix = instruction
+
         step_texts = []
+
         for step in next_step:
             try:
                 step_texts.append(self.context[step].strip())
@@ -169,7 +176,8 @@ def sample_steps(selector: PreTrainedModel, selector_tokenizer: PreTrainedTokeni
 
 
 def batch_apply_deductor(deductor, deductor_tokenizer, search_states: List[SearchState],
-                         next_steps: List[Set[str]], scores: List[float], num_beams=5) -> List[SearchState]:
+                         next_steps: List[Set[str]], scores: List[float], num_beams=5,
+                         deductor_add_hyp=False) -> List[SearchState]:
     assert len(search_states) == len(next_steps)
 
     valid_search_states = []
@@ -178,7 +186,7 @@ def batch_apply_deductor(deductor, deductor_tokenizer, search_states: List[Searc
     for s, next_step, score in zip(search_states, next_steps, scores):
         try:
             # avoid terminating search if there are bad steps given by the selector
-            deduction_prompt = s.get_deduction_prompt(next_step)
+            deduction_prompt = s.get_deduction_prompt(next_step, deductor_add_hyp=deductor_add_hyp)
         except Exception as e:
             print(e)
             continue
@@ -352,7 +360,6 @@ def proof_beam_search(example: Dict, deductor: PreTrainedModel, deductor_tokeniz
             if len(active_beams) == 0:
                 break
 
-            pprint(f"step {i + 1}")
             outputs = batch_sample_steps(selector, selector_tokenizer, active_beams, top_k=n_search_beams)
             flattened_outputs = []
 
@@ -366,7 +373,7 @@ def proof_beam_search(example: Dict, deductor: PreTrainedModel, deductor_tokeniz
             active_beams = [duplicate_search_state(active_beams[beam_id]) for beam_id, _, _ in flattened_outputs]
             next_steps = [o[1] for o in flattened_outputs]
             scores = [o[2] for o in flattened_outputs]
-            print(list(zip(next_steps, scores)))
+            # print(list(zip(next_steps, scores)))
             active_beams = batch_apply_deductor(deductor, deductor_tokenizer, search_states=active_beams,
                                                 next_steps=next_steps, scores=scores)
 
@@ -386,11 +393,12 @@ def proof_beam_search(example: Dict, deductor: PreTrainedModel, deductor_tokeniz
         # sort results by score:
         # reached_hypothesis = sorted(reached_hypothesis, key=lambda x: -x.score)[:n_search_beams]
         # sort results by how close they are to the hypothesis
-        reached_hypothesis = sorted(reached_hypothesis, key=lambda x: -x[1])[:n_search_beams]
-        reached_hypothesis = [x[0] for x in reached_hypothesis]
+        reached_hypothesis = sorted(reached_hypothesis, key=lambda x: -x[0].score)[:n_search_beams]
 
-        for beam in reached_hypothesis:
-            pprint(beam.get_formatted_full_proof())
+        for beam, hscore in reached_hypothesis:
+            pprint(f"proof score: {beam.score} hypothesis match score: {hscore}\n{beam.get_formatted_full_proof()}")
+
+        reached_hypothesis = [x[0] for x in reached_hypothesis]
         return reached_hypothesis[0].get_formatted_full_proof()
 
 
@@ -399,7 +407,9 @@ def early_selection_weighted_search(example: Dict, deductor: PreTrainedModel, de
                       selector: PreTrainedModel, selector_tokenizer: PreTrainedTokenizer,
                       bleurt_tokenizer: PreTrainedTokenizer,
                       bleurt_model: PreTrainedModel,
-                      n_iters: int = 6, n_search_beams: int = 2, hypothesis_acceptance_threshold: float = 0.6) -> str:
+                      n_iters: int = 6, n_search_beams: int = 2,
+                      hypothesis_acceptance_threshold: float = 0.6,
+                      deductor_add_hyp: bool = False) -> str:
     initial_search_state = SearchState(example, bluert_model=bleurt_model, bluert_tokenizer=bleurt_tokenizer)
 
     active_beams = [initial_search_state]
@@ -438,7 +448,7 @@ def early_selection_weighted_search(example: Dict, deductor: PreTrainedModel, de
             scores = [o[2] for o in flattened_outputs]
             # print(list(zip(next_steps, scores)))
             active_beams = batch_apply_deductor(deductor, deductor_tokenizer, search_states=active_beams,
-                                                next_steps=next_steps, scores=scores)
+                                                next_steps=next_steps, scores=scores, deductor_add_hyp=deductor_add_hyp)
 
     except Exception as e:
         print("Failed to generate proof for this example!")
@@ -454,13 +464,12 @@ def early_selection_weighted_search(example: Dict, deductor: PreTrainedModel, de
         return active_beams[0].get_formatted_full_proof()
     else:
         # sort results by score:
-        # reached_hypothesis = sorted(reached_hypothesis, key=lambda x: -x.score)[:n_search_beams]
-        # sort results by how close they are to the hypothesis
         reached_hypothesis = sorted(reached_hypothesis, key=lambda x: -x[1])[:n_search_beams]
-        reached_hypothesis = [x[0] for x in reached_hypothesis]
 
-        for beam in reached_hypothesis:
-            pprint(beam.get_formatted_full_proof())
+        for beam, hscore in reached_hypothesis:
+            pprint(f"proof score: {beam.score} hypothesis match score: {hscore}\n{beam.get_formatted_full_proof()}")
+
+        reached_hypothesis = [x[0] for x in reached_hypothesis]
         return reached_hypothesis[0].get_formatted_full_proof()
 
 
@@ -493,7 +502,7 @@ def load_model_and_tokenizer(model_name: str, cache_dir=None):
 
 
 def run(deductor_path: str, selector_path: str, test_data_path: str, output_dir: str, cache_dir=None,
-        n_search_beams=1, hypothesis_acceptance_threshold=0.6):
+        n_search_beams=1, hypothesis_acceptance_threshold=0.6, deductor_add_hyp=False):
     deductor, deductor_tokenizer = load_model_and_tokenizer(deductor_path, cache_dir=cache_dir)
     deductor.eval()
     selector, selector_tokenizer = load_model_and_tokenizer(selector_path, cache_dir=cache_dir)
@@ -504,6 +513,7 @@ def run(deductor_path: str, selector_path: str, test_data_path: str, output_dir:
                                                                       cache_dir=cache_dir)
     bleurt_model.eval()
 
+    #todo: changed for test
     examples = load_examples(test_data_path)
     # np.random.shuffle(examples)
 
@@ -523,13 +533,13 @@ def run(deductor_path: str, selector_path: str, test_data_path: str, output_dir:
         # proof = proof_beam_search(example, deductor, deductor_tokenizer, selector, selector_tokenizer,
         #                           bleurt_tokenizer, bleurt_model, n_search_beams=n_search_beams)
         proof = early_selection_weighted_search(example, deductor, deductor_tokenizer, selector, selector_tokenizer,
-                                  bleurt_tokenizer, bleurt_model, n_search_beams=n_search_beams)
+                                  bleurt_tokenizer, bleurt_model, n_search_beams=n_search_beams, deductor_add_hyp=deductor_add_hyp)
         results.append(proof)
 
 
     os.makedirs(output_dir, exist_ok=True)
     output_file_name = test_data_path.split('/')[-1]
-    with open(os.path.join(output_dir, output_file_name.replace('.jsonl', '.tsv')), 'w') as f:
+    with open(os.path.join(output_dir, output_file_name.replace('.json', '.tsv')), 'w') as f:
         f.write("\n".join(results))
 
 
