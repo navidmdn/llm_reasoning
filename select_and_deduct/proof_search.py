@@ -513,7 +513,6 @@ def run(deductor_path: str, selector_path: str, test_data_path: str, output_dir:
                                                                       cache_dir=cache_dir)
     bleurt_model.eval()
 
-    #todo: changed for test
     examples = load_examples(test_data_path)
     # np.random.shuffle(examples)
 

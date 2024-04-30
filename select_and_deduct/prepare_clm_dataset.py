@@ -18,8 +18,10 @@ def preprocess_deduction(data: List[Dict]) -> List[Dict]:
 
     return result
 
+
 def preprocess_selection(data: List[Dict]) -> List[Dict]:
     pass
+
 
 def preprocess(data: List[Dict], task: str) -> List[Dict]:
     if task == "deduction":
