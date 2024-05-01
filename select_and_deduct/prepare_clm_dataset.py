@@ -4,8 +4,8 @@ from fire import Fire
 from typing import List, Dict
 from tqdm import tqdm
 
-INSTRUCTION_BEGIN_TOKENS = "\n### Instruction\n"
-RESPONSE_BEGIN_TOKENS = "\n### Response\n"
+INSTRUCTION_BEGIN_TOKENS = "### Instruction\n"
+RESPONSE_BEGIN_TOKENS = "### Response\n"
 
 def preprocess_deduction(data: List[Dict]) -> List[Dict]:
     system_message = """You are the entailment component of a reasoning system. Your task is to take a couple of sentences and induce\
@@ -13,7 +13,7 @@ def preprocess_deduction(data: List[Dict]) -> List[Dict]:
 
     result = []
     for sample in tqdm(data):
-        text = f"\n{INSTRUCTION_BEGIN_TOKENS}{system_message}\n{sample['premises']}\n{RESPONSE_BEGIN_TOKENS}{sample['conclusion']}"
+        text = f"{INSTRUCTION_BEGIN_TOKENS}{system_message}\n{sample['premises']}\n{RESPONSE_BEGIN_TOKENS}{sample['conclusion']}"
         result.append({'text': text})
 
     return result
