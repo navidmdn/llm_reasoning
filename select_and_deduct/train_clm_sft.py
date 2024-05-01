@@ -88,6 +88,9 @@ class ScriptArguments:
     local_test: bool = field(
         default=False, metadata={"help": "Whether to run a local test"}
     )
+    max_new_tokens: int = field(
+        default=100, metadata={"help": "Max number of tokens to generate"}
+    )
 
 
 def load_test_llama3_tokenizer_and_model(model_id):
@@ -236,7 +239,13 @@ def training_function(script_args, training_args):
 
         input_lens = inputs["input_ids"].shape[1]
         #todo: configure generation configs specifically for selection task
-        outputs = model.generate(**inputs, max_new_tokens=128, num_return_sequences=script_args.num_return_sequences)
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=script_args.max_new_tokens,
+            num_return_sequences=script_args.num_return_sequences,
+            num_beams=script_args.num_return_sequences,
+            do_sample=False,
+        )
         outputs = outputs[:, input_lens:]
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
         decoded_preds = tokenizer.batch_decode(outputs, skip_special_tokens=True)

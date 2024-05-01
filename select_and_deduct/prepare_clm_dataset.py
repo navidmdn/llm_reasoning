@@ -7,6 +7,7 @@ from tqdm import tqdm
 INSTRUCTION_BEGIN_TOKENS = "### Instruction\n"
 RESPONSE_BEGIN_TOKENS = "### Response\n"
 
+
 def preprocess_deduction(data: List[Dict]) -> List[Dict]:
     system_message = """You are the entailment component of a reasoning system. Your task is to take a couple of sentences and induce\
  a new sentence."""
@@ -20,8 +21,15 @@ def preprocess_deduction(data: List[Dict]) -> List[Dict]:
 
 
 def preprocess_selection(data: List[Dict]) -> List[Dict]:
-    pass
+    system_message = """You are the selection component of a reasoning system. Your task is to take a couple of\
+ sentences as initial facts along with a hypothesis and select the most promising sentences for forward reasoning."""
 
+    result = []
+    for sample in tqdm(data):
+        text = f"{INSTRUCTION_BEGIN_TOKENS}{system_message}\n{sample['premises']}\n{RESPONSE_BEGIN_TOKENS}{sample['steps']}"
+        result.append({'text': text})
+
+    return result
 
 def preprocess(data: List[Dict], task: str) -> List[Dict]:
     if task == "deduction":
