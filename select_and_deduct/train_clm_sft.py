@@ -149,16 +149,18 @@ def training_function(script_args, training_args):
         tokenizer, model = load_test_llama3_tokenizer_and_model(script_args.model_id)
     else:
         tokenizer = AutoTokenizer.from_pretrained(script_args.model_id, use_fast=True, cache_dir=script_args.cache_dir)
-    tokenizer.pad_token = tokenizer.eos_token
+
+    #todo: what's a better choice for padding token?
+    tokenizer.pad_token = tokenizer.bos_token
+
     # padding side should be left for causal language modeling
     tokenizer.padding_side = "left"
     tokenizer.truncation_side = "left"
 
-    tokenizer.chat_template = LLAMA_3_CHAT_TEMPLATE
-
     instruction_template = tokenizer.encode(INSTRUCTION_BEGIN_TOKENS, add_special_tokens=False)[1:]
     response_template = tokenizer.encode(RESPONSE_BEGIN_TOKENS, add_special_tokens=False)[1:]
 
+    # todo: change the instruction template to be the same as model's template if using chat model
     data_collator = DataCollatorForCompletionOnlyLM(
         tokenizer=tokenizer,
         instruction_template=instruction_template,
@@ -275,12 +277,12 @@ def training_function(script_args, training_args):
     ################
     # Training
     ################
+    #todo: default trainer takes max seq len and tokenize itself before data collation. check seq lens
     trainer = SFTTrainer(
         model=model,
         args=training_args,
         data_collator=data_collator,
         train_dataset=train_dataset,
-        max_seq_length=2048,
         dataset_text_field="text",
         eval_dataset=dev_dataset,
         peft_config=peft_config,

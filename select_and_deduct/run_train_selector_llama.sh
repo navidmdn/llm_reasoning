@@ -1,5 +1,5 @@
 
-WANDB_MODE=online WANDB_ENTITY=navidmdn WANDB_PROJECT=selector-clm PYTHONPATH=.. python train_clm_sft.py\
+WANDB_MODE=offline WANDB_ENTITY=navidmdn WANDB_PROJECT=selector-clm PYTHONPATH=.. python train_clm_sft.py\
   --train_file ../data/selector_train_clm.json\
   --dev_file ../data/selector_dev_clm.json\
   --output_dir ../outputs/selector_llama2-7b\
@@ -11,13 +11,14 @@ WANDB_MODE=online WANDB_ENTITY=navidmdn WANDB_PROJECT=selector-clm PYTHONPATH=..
   --load_in_4bit\
   --evaluation_strategy steps\
   --include_inputs_for_metrics\
-  --per_device_train_batch_size 8\
-  --per_device_eval_batch_size 8\
-  --gradient_accumulation_steps 4\
+  --per_device_train_batch_size 1\
+  --per_device_eval_batch_size 1\
+  --gradient_accumulation_steps 32\
+  --eval_accumulation_steps 1\
   --num_train_epochs 10\
   --save_strategy steps\
   --save_total_limit 1\
-  --metric_for_best_model eval_loss\
+  --metric_for_best_model eval_top5_acc\
   --evaluation_strategy steps\
   --save_steps 10\
   --logging_steps 5\
