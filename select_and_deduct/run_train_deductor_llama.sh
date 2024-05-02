@@ -26,7 +26,7 @@ WANDB_MODE=online WANDB_ENTITY=navidmdn WANDB_PROJECT=deductor-clm PYTHONPATH=..
   --load_best_model_at_end\
   --eval_steps 10\
   --max_eval_samples 128\
-  --max_sequnece_length 2048\
+  --max_sequnece_length 512\
 
 
 

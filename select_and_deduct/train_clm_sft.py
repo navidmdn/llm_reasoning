@@ -13,6 +13,7 @@ from transformers import (
     BitsAndBytesConfig,
     set_seed,
 )
+from tqdm import tqdm
 import nltk
 from select_and_deduct.prepare_clm_dataset import RESPONSE_BEGIN_TOKENS, INSTRUCTION_BEGIN_TOKENS
 from trl import setup_chat_format, DataCollatorForCompletionOnlyLM
@@ -26,26 +27,6 @@ from trl import (
 import evaluate
 
 import codecs
-
-
-# Comment in if you want to use the Llama 3 instruct template but make sure to add modules_to_save
-# LLAMA_3_CHAT_TEMPLATE="{% set loop_messages = messages %}{% for message in loop_messages %}{% set content = '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'+ message['content'] | trim + '<|eot_id|>' %}{% if loop.index0 == 0 %}{% set content = bos_token + content %}{% endif %}{{ content }}{% endfor %}{% if add_generation_prompt %}{{ '<|start_header_id|>assistant<|end_header_id|>\n\n' }}{% endif %}"
-
-# Anthropic/Vicuna like template without the need for special tokens
-LLAMA_3_CHAT_TEMPLATE = (
-    "{% for message in messages %}"
-    "{% if message['role'] == 'system' %}"
-    "{{ message['content'] }}"
-    "{% elif message['role'] == 'user' %}"
-    "{{ '\n\nHuman: ' + message['content'] +  eos_token }}"
-    "{% elif message['role'] == 'assistant' %}"
-    "{{ '\n\nAssistant: '  + message['content'] +  eos_token  }}"
-    "{% endif %}"
-    "{% endfor %}"
-    "{% if add_generation_prompt %}"
-    "{{ '\n\nAssistant: ' }}"
-    "{% endif %}"
-)
 
 #todo: test fsdp:
 # ACCELERATE_USE_FSDP=1 FSDP_CPU_RAM_EFFICIENT_LOADING=1 torchrun --nproc_per_node=4 ./scripts/run_fsdp_qlora.py --config llama_3_70b_fsdp_qlora.yaml
@@ -175,20 +156,30 @@ def training_function(script_args, training_args):
             print(train_dataset[index]["text"])
 
     # Model
-    if 'llama' in script_args.model_id.lower():
+    device_map = None
+    if 'llama-3' in script_args.model_id.lower():
         #todo: checkout official example code for correct dtype
         print("Using llama 3 recommended data type")
         torch_dtype = torch.bfloat16
         quant_storage_dtype = torch.bfloat16
+        bnb_4bit_use_double_quant = True
+    elif 'llama-2' in script_args.model_id.lower():
+        print("Using llama 2 recommended data type")
+        torch_dtype = torch.float16
+        quant_storage_dtype = torch.float16
+        bnb_4bit_use_double_quant = False
+        device_map = {"": 0}
     else:
         torch_dtype = None
         quant_storage_dtype = None
+        bnb_4bit_use_double_quant = None
 
     quantization_config = None
     if script_args.load_in_4bit:
+        print("Using 4bit quantization")
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
-            bnb_4bit_use_double_quant=True,
+            bnb_4bit_use_double_quant=bnb_4bit_use_double_quant,
             bnb_4bit_quant_type="nf4",
             bnb_4bit_compute_dtype=torch_dtype,
             bnb_4bit_quant_storage=quant_storage_dtype,
@@ -202,6 +193,7 @@ def training_function(script_args, training_args):
             torch_dtype=quant_storage_dtype,
             use_cache=False if training_args.gradient_checkpointing else True,
             cache_dir=script_args.cache_dir,
+            device_map=device_map
         )
 
     if training_args.gradient_checkpointing:
@@ -241,27 +233,45 @@ def training_function(script_args, training_args):
 
         input_lens = inputs["input_ids"].shape[1]
         #todo: configure generation configs specifically for selection task
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=script_args.max_new_tokens,
-            num_return_sequences=script_args.num_return_sequences,
-            num_beams=script_args.num_return_sequences,
-            do_sample=False,
-        )
-        outputs = outputs[:, input_lens:]
+        print("Generating responses")
+
+        outputs = []
+        i = 0
+        batch_size = training_args.per_device_eval_batch_size
+        while i < len(inputs["input_ids"]):
+            input_id_list = inputs["input_ids"][i:i + batch_size]
+            attention_mask_list = inputs["attention_mask"][i:i + batch_size]
+
+            input_id_list = input_id_list.to(model.device)
+            attention_mask_list = attention_mask_list.to(model.device)
+
+            output = model.generate(
+                input_ids=input_id_list,
+                attention_mask=attention_mask_list,
+                max_new_tokens=script_args.max_new_tokens,
+                num_return_sequences=script_args.num_return_sequences,
+                num_beams=script_args.num_return_sequences,
+                do_sample=False,
+                pad_token_id=tokenizer.bos_token_id,
+            )
+
+            outputs.append(output[:, input_lens:].cpu().numpy())
+            i += batch_size
+
+        outputs = np.concatenate(outputs, axis=0)
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
         decoded_preds = tokenizer.batch_decode(outputs, skip_special_tokens=True)
-        decoded_preds = [pred.split('\n')[0] for pred in decoded_preds]
-        for pred, label in zip(decoded_preds, decoded_labels):
-            print(f"Pred: {pred}")
-            print(f"Label: {label}")
-            print("------")
 
         perm_inv_metrics = {}
         if script_args.num_return_sequences > 1:
             perm_inv_metrics = permutation_invariant_metrics(decoded_preds, decoded_labels,
                                                              script_args.num_return_sequences)
             decoded_preds = decoded_preds[0::script_args.num_return_sequences]
+
+        for pred, label in zip(decoded_preds, decoded_labels):
+            print(f"Pred: {pred}")
+            print(f"Label: {label}")
+            print("------")
 
         # Some simple post-processing
         decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
