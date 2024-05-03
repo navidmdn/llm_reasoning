@@ -254,7 +254,7 @@ def greedy_proof_search(example: Dict, deductor: PreTrainedModel, deductor_token
         raise
     return search_state.get_formatted_full_proof()
 
-def batched_generate(inputs, model, tokenizer, max_length=100, num_return_sequences=1, num_beams=5, batch_size=3):
+def batched_generate(inputs, model, tokenizer, max_length=100, num_return_sequences=1, num_beams=5, batch_size=1):
     outputs = []
     scores = []
     for i in range(0, len(inputs), batch_size):
@@ -433,7 +433,7 @@ def early_selection_weighted_search(example: Dict, deductor: PreTrainedModel, de
             if i > 0:
                 outputs = batch_sample_steps(selector, selector_tokenizer, active_beams, top_k=1)
             else:
-                outputs = batch_sample_steps(selector, selector_tokenizer, active_beams, top_k=n_search_beams*2)
+                outputs = batch_sample_steps(selector, selector_tokenizer, active_beams, top_k=n_search_beams)
 
             flattened_outputs = []
             cur_beam_scores = [b.score for b in active_beams]
@@ -464,7 +464,7 @@ def early_selection_weighted_search(example: Dict, deductor: PreTrainedModel, de
         return active_beams[0].get_formatted_full_proof()
     else:
         # sort results by score:
-        reached_hypothesis = sorted(reached_hypothesis, key=lambda x: -x[1])[:n_search_beams]
+        reached_hypothesis = sorted(reached_hypothesis, key=lambda x: -x[0].score)[:n_search_beams]
 
         for beam, hscore in reached_hypothesis:
             pprint(f"proof score: {beam.score} hypothesis match score: {hscore}\n{beam.get_formatted_full_proof()}")
