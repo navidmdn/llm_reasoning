@@ -1,0 +1,25 @@
+WANDB_MODE=online WANDB_ENTITY=navidmdn WANDB_PROJECT=deductor python train_seq2seq.py\
+  --model_name_or_path google/flan-t5-xl\
+  --do_train\
+  --do_eval\
+  --cache_dir ../../hfcache\
+  --train_file ../data/deductor_train_merged.json\
+  --validation_file ../data/deductor_dev_merged.json\
+  --source_prefix "given premises perform an induction step:\n"\
+  --output_dir ../outputs/deductor-flant5-xl\
+  --per_device_train_batch_size 4\
+  --per_device_eval_batch_size 4\
+  --gradient_accumulation_steps 8\
+  --num_train_epochs 10\
+  --max_target_length 256\
+  --save_strategy steps\
+  --save_total_limit 1\
+  --metric_for_best_model eval_loss\
+  --evaluation_strategy steps\
+  --eval_steps 50\
+  --save_steps 50\
+  --logging_steps 25\
+  --overwrite_output_dir\
+  --predict_with_generate\
+  --report_to wandb\
+  --load_best_model_at_end
