@@ -528,9 +528,11 @@ def run(deductor_path: str, selector_path: str, test_data_path: str, output_dir:
         print("*" * 50)
 
         if search_algorithm == 'greedy':
+            # todo: add hypothesis and threshold options
             proof = greedy_proof_search(example, deductor, deductor_tokenizer, selector, selector_tokenizer,
                                         bleurt_tokenizer, bleurt_model, cache_dir)
         elif search_algorithm == 'beam-search':
+            #todo: add hypothesis and threshold options
             proof = proof_beam_search(example, deductor, deductor_tokenizer, selector, selector_tokenizer,
                                       bleurt_tokenizer, bleurt_model, n_search_beams=n_search_beams)
         elif search_algorithm == 'early_selection':
