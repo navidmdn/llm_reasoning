@@ -14,7 +14,8 @@ from collections import OrderedDict
 
 
 class SearchState:
-    def __init__(self, example: Union[Dict, None], bluert_model: PreTrainedModel, bluert_tokenizer: PreTrainedTokenizer):
+    def __init__(self, example: Union[Dict, None], bluert_model: PreTrainedModel,
+                 bluert_tokenizer: PreTrainedTokenizer):
 
         if example is None:
             self.dataset = None
@@ -197,8 +198,9 @@ def batch_apply_deductor(deductor, deductor_tokenizer, search_states: List[Searc
         print("No valid deduction prompts were generated")
         return search_states
 
-    generated_texts, _ = batched_generate(input_txts, deductor, deductor_tokenizer, max_length=100, num_return_sequences=1,
-                                       num_beams=num_beams)
+    generated_texts, _ = batched_generate(input_txts, deductor, deductor_tokenizer, max_length=100,
+                                          num_return_sequences=1,
+                                          num_beams=num_beams)
     # inputs = deductor_tokenizer(input_txts, return_tensors='pt', padding='longest', truncation=True)
     # outputs = deductor.generate(**inputs, max_length=100, num_return_sequences=1, num_beams=num_beams)
     # generated_texts = deductor_tokenizer.batch_decode(outputs, skip_special_tokens=True)
@@ -209,7 +211,7 @@ def batch_apply_deductor(deductor, deductor_tokenizer, search_states: List[Searc
     return search_states
 
 
-def apply_deductor(deductor, deductor_tokenizer, search_state: SearchState, next_step: FrozenSet[str], score: float)\
+def apply_deductor(deductor, deductor_tokenizer, search_state: SearchState, next_step: FrozenSet[str], score: float) \
         -> SearchState:
     """
     Apply the deductor model to the current proof state and the next steps to take. It will return the updated search
@@ -254,6 +256,7 @@ def greedy_proof_search(example: Dict, deductor: PreTrainedModel, deductor_token
         raise
     return search_state.get_formatted_full_proof()
 
+
 def batched_generate(inputs, model, tokenizer, max_length=100, num_return_sequences=1, num_beams=5, batch_size=1):
     outputs = []
     scores = []
@@ -267,13 +270,14 @@ def batched_generate(inputs, model, tokenizer, max_length=100, num_return_sequen
         if num_beams > 1:
             scores.extend(batch_outputs.sequences_scores)
         else:
-            #todo: quick fix to the problem of none sequence scores when num_beams=1
+            # todo: quick fix to the problem of none sequence scores when num_beams=1
             scores.extend([0.0] * len(output_texts))
         outputs.extend(output_texts)
 
     if isinstance(scores, list):
         scores = torch.tensor(scores)
     return outputs, scores
+
 
 def batch_sample_steps(selector: PreTrainedModel, selector_tokenizer: PreTrainedTokenizer,
                        search_states: List[SearchState], top_k: int = 20) -> List[List[Tuple[FrozenSet, float]]]:
@@ -282,15 +286,9 @@ def batch_sample_steps(selector: PreTrainedModel, selector_tokenizer: PreTrained
     and removing redundant ones, returns a list with the size of the number of input search states in which each element
     is a list of top outputs along with their scores
     """
-    step_texts, scores = batched_generate([s.get_selection_prompt() for s in search_states], selector, selector_tokenizer,
-                                       max_length=100, num_return_sequences=top_k, num_beams=top_k)
-    # inputs = [s.get_selection_prompt() for s in search_states]
-    # inputs = selector_tokenizer(inputs, return_tensors='pt', padding='longest', truncation=True)
-    # outputs = selector.generate(**inputs, max_length=100, num_return_sequences=top_k, num_beams=top_k,
-    #                             do_sample=False, return_dict_in_generate=True, output_scores=True, )
-    #
-    # step_texts = selector_tokenizer.batch_decode(outputs.sequences, skip_special_tokens=True)
-    # scores = outputs.sequences_scores
+    step_texts, scores = batched_generate([s.get_selection_prompt() for s in search_states], selector,
+                                          selector_tokenizer,
+                                          max_length=100, num_return_sequences=top_k, num_beams=top_k)
     output_idx = 0
     outputs_splited = []
 
@@ -313,7 +311,8 @@ def batch_sample_steps(selector: PreTrainedModel, selector_tokenizer: PreTrained
 
 
 def batch_test_if_hypothesis_reached(search_states: List[SearchState], bleurt_tokenizer: PreTrainedTokenizer,
-                                     bleurt_model: PreTrainedModel, threshold: float = 0.6) -> Tuple[List[bool], List[float]]:
+                                     bleurt_model: PreTrainedModel, threshold: float = 0.6) -> Tuple[
+    List[bool], List[float]]:
     last_proofs = [s.get_last_proof() for s in search_states]
     valid_proof_indices = [i for i, proof in enumerate(last_proofs) if proof is not None]
     valid_last_proofs = [last_proofs[i] for i in valid_proof_indices]
@@ -322,7 +321,7 @@ def batch_test_if_hypothesis_reached(search_states: List[SearchState], bleurt_to
 
     result = [False] * len(search_states)
     if len(valid_last_proofs) == 0:
-        return result, [0.0]*len(search_states)
+        return result, [0.0] * len(search_states)
 
     with torch.no_grad():
         inp = bleurt_tokenizer(hypotheses, valid_last_proofs, return_tensors='pt', padding='longest', truncation=True)
@@ -402,14 +401,13 @@ def proof_beam_search(example: Dict, deductor: PreTrainedModel, deductor_tokeniz
         return reached_hypothesis[0].get_formatted_full_proof()
 
 
-
 def early_selection_weighted_search(example: Dict, deductor: PreTrainedModel, deductor_tokenizer: PreTrainedTokenizer,
-                      selector: PreTrainedModel, selector_tokenizer: PreTrainedTokenizer,
-                      bleurt_tokenizer: PreTrainedTokenizer,
-                      bleurt_model: PreTrainedModel,
-                      n_iters: int = 6, n_search_beams: int = 2,
-                      hypothesis_acceptance_threshold: float = 0.6,
-                      deductor_add_hyp: bool = False) -> str:
+                                    selector: PreTrainedModel, selector_tokenizer: PreTrainedTokenizer,
+                                    bleurt_tokenizer: PreTrainedTokenizer,
+                                    bleurt_model: PreTrainedModel,
+                                    n_iters: int = 6, n_search_beams: int = 2,
+                                    hypothesis_acceptance_threshold: float = 0.6,
+                                    deductor_add_hyp: bool = False) -> str:
     initial_search_state = SearchState(example, bluert_model=bleurt_model, bluert_tokenizer=bleurt_tokenizer)
 
     active_beams = [initial_search_state]
@@ -473,7 +471,6 @@ def early_selection_weighted_search(example: Dict, deductor: PreTrainedModel, de
         return reached_hypothesis[0].get_formatted_full_proof()
 
 
-
 def duplicate_search_state(search_state: SearchState) -> SearchState:
     new_search_state = SearchState(None, search_state.bleurt_model, search_state.bleurt_tokenizer)
     new_search_state.context = deepcopy(search_state.context)
@@ -482,6 +479,7 @@ def duplicate_search_state(search_state: SearchState) -> SearchState:
     new_search_state.hypothesis = search_state.hypothesis
     new_search_state.score = search_state.score
     return new_search_state
+
 
 def pprint(txt: str):
     print("====================================")
@@ -502,7 +500,8 @@ def load_model_and_tokenizer(model_name: str, cache_dir=None):
 
 
 def run(deductor_path: str, selector_path: str, test_data_path: str, output_dir: str, cache_dir=None,
-        n_search_beams=1, hypothesis_acceptance_threshold=0.6, deductor_add_hyp=False):
+        n_search_beams=1, hypothesis_acceptance_threshold=0.6, deductor_add_hyp=False,
+        search_algorithm='early_selection'):
     deductor, deductor_tokenizer = load_model_and_tokenizer(deductor_path, cache_dir=cache_dir)
     deductor.eval()
     selector, selector_tokenizer = load_model_and_tokenizer(selector_path, cache_dir=cache_dir)
@@ -518,23 +517,31 @@ def run(deductor_path: str, selector_path: str, test_data_path: str, output_dir:
 
     results = []
     for example in tqdm(examples):
-        #todo: make sure false examples are not in dataset
+
+        # todo: make sure false examples are not in dataset
         if 'depth' in example and (example['depth'] is None or example['depth'] < 1 or example['answer'] is False):
             continue
-        # proof = greedy_proof_search(example, deductor, deductor_tokenizer, selector, selector_tokenizer,
-        #                             bleurt_tokenizer, bleurt_model, cache_dir)
 
         print("*" * 50)
         print("Ground truth proof:")
         print(example['proof'] if 'proof' in example else example['proofs'])
         print("*" * 50)
 
-        # proof = proof_beam_search(example, deductor, deductor_tokenizer, selector, selector_tokenizer,
-        #                           bleurt_tokenizer, bleurt_model, n_search_beams=n_search_beams)
-        proof = early_selection_weighted_search(example, deductor, deductor_tokenizer, selector, selector_tokenizer,
-                                  bleurt_tokenizer, bleurt_model, n_search_beams=n_search_beams, deductor_add_hyp=deductor_add_hyp)
-        results.append(proof)
+        if search_algorithm == 'greedy':
+            proof = greedy_proof_search(example, deductor, deductor_tokenizer, selector, selector_tokenizer,
+                                        bleurt_tokenizer, bleurt_model, cache_dir)
+        elif search_algorithm == 'beam-search':
+            proof = proof_beam_search(example, deductor, deductor_tokenizer, selector, selector_tokenizer,
+                                      bleurt_tokenizer, bleurt_model, n_search_beams=n_search_beams)
+        elif search_algorithm == 'early_selection':
+            proof = early_selection_weighted_search(example, deductor, deductor_tokenizer, selector, selector_tokenizer,
+                                                    bleurt_tokenizer, bleurt_model, n_search_beams=n_search_beams,
+                                                    hypothesis_acceptance_threshold=hypothesis_acceptance_threshold,
+                                                    deductor_add_hyp=deductor_add_hyp)
+        else:
+            raise ValueError(f"Unknown search algorithm: {search_algorithm}")
 
+        results.append(proof)
 
     os.makedirs(output_dir, exist_ok=True)
     output_file_name = test_data_path.split('/')[-1]
@@ -545,6 +552,7 @@ def run(deductor_path: str, selector_path: str, test_data_path: str, output_dir:
 if __name__ == '__main__':
     Fire(run)
 
+# to run locally
 # run(
 #     deductor_path='models/deductor-t5-large',
 #     selector_path='models/selector-flant5-large',
