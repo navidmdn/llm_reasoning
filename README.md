@@ -4,7 +4,7 @@ A repo to understand the reasoning capabilities of llms
 
 ## Select and Deduct
 
-The implemented method for this section is explained in [this blog post](). The general idea is to implement a simple, 
+The implemented method for this section is explained in [this blog post](https://navidmdn.github.io/homepage/blog/reasoning-select-and-deduct/). The general idea is to implement a simple, 
 modular and explainable reasoning system that tries to mimic the reasoning capabilities of humans in a combination of
 forward and backward reasoning. 
 
