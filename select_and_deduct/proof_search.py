@@ -355,7 +355,7 @@ def proof_beam_search(example: Dict, deductor: PreTrainedModel, deductor_tokeniz
                       selector: PreTrainedModel, selector_tokenizer: PreTrainedTokenizer,
                       bleurt_tokenizer: PreTrainedTokenizer,
                       bleurt_model: PreTrainedModel,
-                      n_iters: int = 6, n_search_beams: int = 2,
+                      n_iters: int = 5, n_search_beams: int = 2,
                       deductor_add_hyp: bool = False, verbose=False,
                       hypothesis_acceptance_threshold: float = 0.6) -> str:
     initial_search_state = SearchState(example, bluert_model=bleurt_model, bluert_tokenizer=bleurt_tokenizer)
@@ -529,8 +529,8 @@ def load_examples(test_data_path: str):
     return [json.loads(example) for example in examples]
 
 
-def load_model_and_tokenizer(model_name: str, cache_dir=None):
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_name, cache_dir=cache_dir)
+def load_model_and_tokenizer(model_name: str, cache_dir=None, load_in_8bit=False):
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name, cache_dir=cache_dir, load_in_8bit=load_in_8bit)
     tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=cache_dir)
     return model, tokenizer
 

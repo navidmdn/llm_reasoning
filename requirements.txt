@@ -11,3 +11,4 @@ lark
 fire
 langchain
 llama-cpp-python
+gradio==3.50

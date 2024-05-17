@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Entailment Tree Builder</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        .node circle {
+            fill: #999;
+            stroke: steelblue;
+            stroke-width: 3px;
+        }
+
+        .node text {
+            font: 12px sans-serif;
+        }
+
+        .link {
+            fill: none;
+            stroke: #555;
+            stroke-width: 1.5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Entailment Tree Builder</h1>
+    <form id="tree-form">
+        <label for="premises">Premises (one per line):</label><br>
+        <textarea id="premises" name="premises" rows="10" cols="50"></textarea><br><br>
+        <label for="hypothesis">Hypothesis:</label><br>
+        <input type="text" id="hypothesis" name="hypothesis"><br><br>
+        <input type="submit" value="Generate Tree">
+    </form>
+    <div id="tree"></div>
+
+    <script>
+        document.getElementById('tree-form').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const premises = document.getElementById('premises').value.split('\n');
+            const hypothesis = document.getElementById('hypothesis').value;
+            fetch('/generate_tree', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ premises, hypothesis })
+            })
+            .then(response => response.json())
+            .then(data => {
+                renderTree(data);
+            });
+        });
+
+        function renderTree(treeData) {
+            const width = 960;
+            const height = 500;
+
+            d3.select("#tree").html("");
+
+            const svg = d3.select("#tree").append("svg")
+                .attr("width", width)
+                .attr("height", height)
+                .append("g")
+                .attr("transform", "translate(40,0)");
+
+            const tree = d3.tree().size([height, width - 160]);
+
+            const root = d3.hierarchy(treeData, d => d.children);
+
+            tree(root);
+
+            const link = svg.selectAll(".link")
+                .data(root.descendants().slice(1))
+                .enter().append("path")
+                .attr("class", "link")
+                .attr("d", d => {
+                    return "M" + d.y + "," + d.x
+                        + "C" + (d.parent.y + 100) + "," + d.x
+                        + " " + (d.parent.y + 100) + "," + d.parent.x
+                        + " " + d.parent.y + "," + d.parent.x;
+                });
+
+            const node = svg.selectAll(".node")
+                .data(root.descendants())
+                .enter().append("g")
+                .attr("class", d => "node" + (d.children ? " node--internal" : " node--leaf"))
+                .attr("transform", d => "translate(" + d.y + "," + d.x + ")");
+
+            node.append("circle")
+                .attr("r", 10);
+
+            node.append("text")
+                .attr("dy", 3)
+                .attr("x", d => d.children ? -12 : 12)
+                .style("text-anchor", d => d.children ? "end" : "start")
+                .text(d => d.data.label);
+        }
+    </script>
+</body>
+</html>

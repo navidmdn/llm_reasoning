@@ -2,7 +2,39 @@ from treelib import Node, Tree
 from fire import Fire
 import json
 import re
+import networkx as nx
 
+def visualize_from_proof(context: dict, prediction: str):
+    tree = nx.DiGraph()
+
+    pred_steps = prediction.replace("$proof$ =", "").strip().split(";")[:-1]
+
+    for step in pred_steps:
+        premises, conclusion = step.split("->")
+        conclusion = conclusion.strip()
+
+        if conclusion != 'hypothesis':
+            conc_id = re.findall(r'^(int\d+):', conclusion)[0].strip()
+            conclusion = re.sub(r'^int\d+:', '', conclusion).strip()
+            context[conc_id] = conclusion
+
+    for step in pred_steps[::-1]:
+        premises, conclusion = step.split("->")
+        premises = [p.strip() for p in premises.split("&")]
+        conclusion = conclusion.strip()
+
+        if conclusion == 'hypothesis':
+            conc_id = "hypothesis"
+            tree.add_node("hypothesis", label="hypothesis", color='green')
+        else:
+            conc_id = re.findall(r'^(int\d+):', conclusion)[0].strip()
+
+        for p in premises:
+            if p not in tree.nodes:
+                tree.add_node(p, label=p, color='skyblue')
+            tree.add_edge(p, conc_id)
+
+    return tree, context
 
 def visualize_tree(prediction: str, test_example: dict):
     tree = Tree()
