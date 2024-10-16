@@ -1,0 +1,2 @@
+Your task is to only generate a comprehensive and detailed thought process for the following prompt. You are not required to write the actual response.
+First write down your initial thought process, then expand on it to create a detailed and comprehensive draft answer and its evaluation.

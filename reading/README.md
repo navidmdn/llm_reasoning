@@ -19,3 +19,4 @@ capabilities. The list is not exhaustive and will be updated as I come across.
 ](https://arxiv.org/abs/2403.09629) | 2024 <br/>
 [Learn Beyond The Answer: Training Language Models with Reflection for Mathematical Reasoning
 ](https://arxiv.org/abs/2406.12050) | 2024 <br/>
+[Thinking LLMs: General Instruction Following with Thought Generation](https://arxiv.org/abs/2410.10630) | 2024 <br/>
